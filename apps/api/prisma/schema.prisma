@@ -1,0 +1,324 @@
+// ─────────────────────────────────────────────────────────────
+// Prisma Schema — Adaptive Learning OS (ALOS)
+// Database: PostgreSQL (Neon / Local Docker)
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  PHONE
+}
+
+enum EventType {
+  SESSION_START
+  SESSION_END
+  CONCEPT_VIEWED
+  QUESTION_ATTEMPTED
+  QUESTION_CORRECT
+  QUESTION_INCORRECT
+  HINT_USED
+  VIDEO_STARTED
+  VIDEO_COMPLETED
+  VIDEO_PAUSED
+  REVISION_STARTED
+  REVISION_COMPLETED
+  STREAK_UPDATED
+  MASTERY_UPDATED
+  PATH_PROGRESSED
+  ASSESSMENT_STARTED
+  ASSESSMENT_COMPLETED
+}
+
+enum QuestionType {
+  MCQ
+  TRUE_FALSE
+  SHORT_ANSWER
+  CODE_SNIPPET
+  MATCH_FOLLOWING
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum Domain {
+  DSA
+  SYSTEM_DESIGN
+  BOTH
+}
+
+enum RecommendationType {
+  LEARN_NEW
+  REVISE
+  PRACTICE
+  ASSESSMENT
+  WATCH_VIDEO
+}
+
+// ─────────────────────────────────────────────────────────────
+// USER & AUTH
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String       @id @default(cuid())
+  email        String?      @unique
+  phone        String?      @unique
+  googleId     String?      @unique
+  name         String
+  avatar       String?
+  role         Role         @default(STUDENT)
+  provider     AuthProvider @default(EMAIL)
+  isVerified   Boolean      @default(false)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Relations
+  profile         UserProfile?
+  sessions        LearningSession[]
+  events          LearningEvent[]
+  masteries       ConceptMastery[]
+  streak          LearningStreak?
+  questionAttempts QuestionAttempt[]
+  refreshTokens   RefreshToken[]
+  recommendations Recommendation[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalXP         Int      @default(0)
+  currentLevel    Int      @default(1)
+  preferredDomain Domain   @default(DSA)
+  dailyGoalMins   Int      @default(30)
+  timezone        String   @default("Asia/Kolkata")
+  bio             String?
+  institution     String?
+  targetExam      String?  // "FAANG", "GATE", "GRE", etc.
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("user_profiles")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  isRevoked Boolean  @default(false)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEARNING SESSIONS
+// ─────────────────────────────────────────────────────────────
+
+model LearningSession {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  durationSeconds Int?
+  conceptsVisited String[]  // Array of Neo4j concept IDs
+  questionsCount  Int       @default(0)
+  correctCount    Int       @default(0)
+  xpEarned        Int       @default(0)
+  domain          Domain?
+  deviceInfo      Json?     // browser, OS, screen size
+
+  events LearningEvent[]
+
+  @@index([userId, startedAt])
+  @@map("learning_sessions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEARNING EVENTS (Event Sourcing)
+// ─────────────────────────────────────────────────────────────
+
+model LearningEvent {
+  id          String          @id @default(cuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId   String?
+  session     LearningSession? @relation(fields: [sessionId], references: [id])
+  eventType   EventType
+  conceptId   String          // Neo4j concept node ID
+  conceptName String
+  domain      Domain          @default(DSA)
+  payload     Json            // Event-specific data (flexible)
+  timestamp   DateTime        @default(now())
+
+  @@index([userId, timestamp])
+  @@index([userId, conceptId])
+  @@index([userId, eventType])
+  @@index([conceptId])
+  @@map("learning_events")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONCEPT MASTERY (Per-user, Per-concept scores)
+// ─────────────────────────────────────────────────────────────
+
+model ConceptMastery {
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conceptId          String    // Neo4j concept ID
+  conceptName        String
+  domain             Domain    @default(DSA)
+
+  // Mastery Scoring (Level 1 — Simple)
+  masteryScore       Float     @default(0.0)   // 0.0 to 1.0
+  masteryLevel       Int       @default(0)     // 0=Not started, 1=Beginner, 2=Intermediate, 3=Advanced, 4=Expert
+
+  // Forgetting Curve (Ebbinghaus)
+  retentionScore     Float     @default(1.0)   // Current retention (0.0 to 1.0)
+  lastRevisionAt     DateTime?
+  nextRevisionDue    DateTime?                 // Spaced repetition due date
+  revisionCount      Int       @default(0)
+  memoryStrength     Float     @default(0.0)   // Increases with each revision
+
+  // Attempt Statistics
+  totalAttempts      Int       @default(0)
+  correctAttempts    Int       @default(0)
+  incorrectAttempts  Int       @default(0)
+  hintsUsed          Int       @default(0)
+  avgTimePerQuestion Float?    // In milliseconds
+
+  // Timestamps
+  firstAttemptAt     DateTime?
+  lastAttemptAt      DateTime?
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([userId, conceptId])
+  @@index([userId, masteryScore])
+  @@index([userId, nextRevisionDue])
+  @@index([conceptId])
+  @@map("concept_masteries")
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEARNING STREAKS
+// ─────────────────────────────────────────────────────────────
+
+model LearningStreak {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentStreak   Int       @default(0)
+  longestStreak   Int       @default(0)
+  lastActiveDate  DateTime?
+  totalActiveDays Int       @default(0)
+  streakFreezes   Int       @default(2)  // Streak freeze passes
+  updatedAt       DateTime  @updatedAt
+
+  @@map("learning_streaks")
+}
+
+// ─────────────────────────────────────────────────────────────
+// QUESTIONS (LLM Generated)
+// ─────────────────────────────────────────────────────────────
+
+model Question {
+  id             String       @id @default(cuid())
+  conceptId      String       // Neo4j concept ID
+  conceptName    String
+  domain         Domain       @default(DSA)
+  content        String       @db.Text
+  questionType   QuestionType @default(MCQ)
+  difficulty     Difficulty   @default(MEDIUM)
+  options        Json?        // Array of MCQ options
+  correctAnswer  String       @db.Text
+  explanation    String       @db.Text
+  hints          String[]
+  tags           String[]
+  codeSnippet    String?      @db.Text  // For code-based questions
+  language       String?               // "python", "java", "cpp"
+  generatedByLLM Boolean      @default(true)
+  llmModel       String?               // Which model generated it
+  isValidated    Boolean      @default(false)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  attempts QuestionAttempt[]
+
+  @@index([conceptId, difficulty])
+  @@index([domain, difficulty])
+  @@map("questions")
+}
+
+model QuestionAttempt {
+  id          String    @id @default(cuid())
+  questionId  String
+  question    Question  @relation(fields: [questionId], references: [id])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId   String?
+  answer      String    @db.Text
+  isCorrect   Boolean
+  timeTakenMs Int
+  hintsUsed   Int       @default(0)
+  score       Float     @default(0.0) // Partial credit (0.0 - 1.0)
+  timestamp   DateTime  @default(now())
+
+  @@index([userId, questionId])
+  @@index([userId, timestamp])
+  @@index([questionId])
+  @@map("question_attempts")
+}
+
+// ─────────────────────────────────────────────────────────────
+// RECOMMENDATIONS
+// ─────────────────────────────────────────────────────────────
+
+model Recommendation {
+  id              String             @id @default(cuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conceptId       String
+  conceptName     String
+  type            RecommendationType
+  reason          String             @db.Text  // Human-readable explanation
+  priority        Int                @default(5) // 1-10, higher = more urgent
+  isActedOn       Boolean            @default(false)
+  actedOnAt       DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime           @default(now())
+
+  @@index([userId, priority])
+  @@index([userId, isActedOn])
+  @@map("recommendations")
+}
