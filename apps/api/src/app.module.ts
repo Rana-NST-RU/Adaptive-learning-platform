@@ -5,6 +5,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { KnowledgeGraphModule } from './modules/knowledge-graph/graph.module';
 
 @Module({
   imports: [
@@ -33,6 +34,8 @@ import { UsersModule } from './modules/users/users.module';
     // Feature modules
     AuthModule,
     UsersModule,
+    KnowledgeGraphModule,
   ],
 })
 export class AppModule {}
+
