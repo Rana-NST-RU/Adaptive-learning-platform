@@ -147,29 +147,28 @@ export class GraphService {
     const cypher = fs.readFileSync(seedFilePath, 'utf-8');
 
     // Split on semicolons (each statement ends with ;)
-    // Filter out comment lines, empty statements, and the final stats queries
+    // Strip comment lines from within each chunk, then filter empty results.
+    // Previous approach (filtering chunks that START with //) was wrong —
+    // it silently dropped Cypher statements that followed comment headers.
     const statements = cypher
       .split(';')
-      .map((s) => s.trim())
-      .filter(
-        (s) =>
-          s.length > 0 &&
-          !s.startsWith('//') &&
-          !s.startsWith('MATCH (c:Concept) RETURN') &&
-          !s.startsWith('MATCH ()-[r:PREREQUISITE_OF]') &&
-          !s.startsWith('MATCH ()-[r:BELONGS_TO]'),
-      );
+      .map((chunk) =>
+        chunk
+          .split('\n')
+          .filter((line) => {
+            const t = line.trim();
+            return t !== '' && !t.startsWith('//');
+          })
+          .join('\n')
+          .trim(),
+      )
+      .filter((s) => s.length > 0);
 
     this.logger.log(`Executing ${statements.length} Cypher statements...`);
     let executed = 0;
     let failed = 0;
 
     for (const statement of statements) {
-      // Skip pure-comment blocks
-      if (statement.split('\n').every((line) => line.trim().startsWith('//'))) {
-        continue;
-      }
-
       try {
         await this.neo4j.runWrite(statement);
         executed++;
@@ -199,14 +198,13 @@ export class GraphService {
 
   async getSeedStatus(): Promise<SeedStatusDto> {
     const results = await this.neo4j.runQuery<{
-      totalNodes: number;
       conceptCount: number;
       topicCount: number;
     }>(GET_SEED_STATUS);
 
-    const r = results[0] ?? { totalNodes: 0, conceptCount: 0, topicCount: 0 };
+    const r = results[0] ?? { conceptCount: 0, topicCount: 0 };
     return {
-      totalNodes: r.totalNodes,
+      totalNodes: r.conceptCount + r.topicCount,
       conceptCount: r.conceptCount,
       topicCount: r.topicCount,
       isSeeded: r.conceptCount > 0,

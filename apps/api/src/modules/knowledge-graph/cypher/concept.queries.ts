@@ -88,8 +88,9 @@ export const GET_TOPICS_WITH_COUNTS = `
  * Count total nodes — used to check if the DB is already seeded.
  */
 export const GET_SEED_STATUS = `
-  MATCH (n)
-  RETURN count(n) AS totalNodes,
-         count { (c:Concept) } AS conceptCount,
-         count { (t:Topic) } AS topicCount
+  OPTIONAL MATCH (c:Concept)
+  OPTIONAL MATCH (t:Topic)
+  RETURN
+    count(DISTINCT c) AS conceptCount,
+    count(DISTINCT t) AS topicCount
 `;

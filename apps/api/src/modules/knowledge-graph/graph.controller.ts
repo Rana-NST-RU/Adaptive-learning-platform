@@ -1,8 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Graph Controller
-// REST API for the Knowledge Graph — all routes under /api/graph
-// ─────────────────────────────────────────────────────────────────────────────
-
 import {
   Controller,
   Get,
@@ -12,11 +7,9 @@ import {
   Body,
   HttpCode,
   HttpStatus,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
-  ApiBearerAuth,
   ApiOperation,
   ApiQuery,
   ApiParam,
@@ -30,7 +23,6 @@ import {
   TopicDto,
   SeedStatusDto,
 } from './dto/graph.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('graph')
 @Controller('graph')
@@ -40,8 +32,6 @@ export class GraphController {
   // ─── GET /graph ───────────────────────────────────────────────────────────
 
   @Get()
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Fetch the full knowledge graph',
     description:
@@ -58,8 +48,6 @@ export class GraphController {
   // ─── GET /graph/topics ────────────────────────────────────────────────────
 
   @Get('topics')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'List all topics for a domain with concept counts' })
   @ApiQuery({ name: 'domain', required: false, enum: ['DSA', 'SYSTEM_DESIGN'] })
   @ApiResponse({ status: 200, type: [TopicDto] })
@@ -81,8 +69,6 @@ export class GraphController {
   // ─── GET /graph/path/:targetId ────────────────────────────────────────────
 
   @Get('path/:targetId')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get learning path to a concept',
     description:
@@ -96,12 +82,10 @@ export class GraphController {
   // ─── GET /graph/concepts/:id ──────────────────────────────────────────────
 
   @Get('concepts/:id')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get a single concept with its full neighbourhood',
     description:
-      'Returns concept details including direct prerequisites (what to learn first) and what concepts it unlocks.',
+      'Returns concept details including direct prerequisites and what concepts it unlocks.',
   })
   @ApiParam({ name: 'id', example: 'binary-search' })
   @ApiResponse({ status: 200, type: ConceptDetailDto })

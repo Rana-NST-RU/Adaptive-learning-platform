@@ -49,3 +49,57 @@ export const usersApi = {
   getStats: (userId: string) => apiClient.get(`/users/${userId}/stats`),
   updateMe: (data: Record<string, any>) => apiClient.patch('/users/me', data),
 };
+
+// ─── Knowledge Graph Endpoints ────────────────────────────────
+
+export const graphApi = {
+  /**
+   * Fetch all concept nodes and edges.
+   * @param domain 'DSA' | 'SYSTEM_DESIGN' — omit for all
+   */
+  getGraph: (domain?: 'DSA' | 'SYSTEM_DESIGN') =>
+    apiClient.get<{ nodes: ConceptNode[]; edges: ConceptEdge[] }>(
+      '/graph',
+      domain ? { params: { domain } } : undefined,
+    ),
+
+  getConcept: (id: string) =>
+    apiClient.get<ConceptDetail>(`/graph/concepts/${id}`),
+
+  getLearningPath: (targetId: string) =>
+    apiClient.get<ConceptNode[]>(`/graph/path/${targetId}`),
+
+  getTopics: (domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA') =>
+    apiClient.get(`/graph/topics`, { params: { domain } }),
+
+  getStatus: () => apiClient.get('/graph/status'),
+};
+
+// ─── Graph Types ──────────────────────────────────────────────
+
+export interface ConceptNode {
+  id: string;
+  name: string;
+  domain: 'DSA' | 'SYSTEM_DESIGN';
+  category: string;
+  difficulty: number;
+  xpReward: number;
+  estimatedMinutes: number;
+  description?: string;
+  tags?: string[];
+  isFoundation: boolean;
+  leetcodeTag?: string | null;
+}
+
+export interface ConceptEdge {
+  from: string;
+  to: string;
+  type: 'LEADS_TO' | 'RELATED_TO' | 'REQUIRES' | 'BELONGS_TO';
+}
+
+export interface ConceptDetail extends ConceptNode {
+  topic?: string;
+  prerequisites: Array<{ id: string; name: string; difficulty: number }>;
+  unlocks: Array<{ id: string; name: string; difficulty: number }>;
+}
+

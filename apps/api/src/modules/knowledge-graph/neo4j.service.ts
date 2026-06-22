@@ -60,7 +60,9 @@ export class Neo4jService implements OnModuleInit, OnModuleDestroy {
       database: this.database,
     });
     try {
-      const result: QueryResult = await session.run(cypher, params);
+      const result: QueryResult = await session.executeRead((tx) =>
+        tx.run(cypher, params),
+      );
       return result.records.map((record: Neo4jRecord) => this.recordToObject<T>(record));
     } finally {
       await session.close();
@@ -79,7 +81,9 @@ export class Neo4jService implements OnModuleInit, OnModuleDestroy {
       database: this.database,
     });
     try {
-      const result: QueryResult = await session.run(cypher, params);
+      const result: QueryResult = await session.executeWrite((tx) =>
+        tx.run(cypher, params),
+      );
       return result.records.map((record: Neo4jRecord) => this.recordToObject<T>(record));
     } finally {
       await session.close();
