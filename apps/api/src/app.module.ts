@@ -6,6 +6,7 @@ import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { KnowledgeGraphModule } from './modules/knowledge-graph/graph.module';
+import { QuestionsModule } from './modules/questions/questions.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { KnowledgeGraphModule } from './modules/knowledge-graph/graph.module';
     AuthModule,
     UsersModule,
     KnowledgeGraphModule,
+    QuestionsModule,
   ],
 })
 export class AppModule {}

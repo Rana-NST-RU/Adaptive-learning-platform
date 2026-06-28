@@ -8,7 +8,7 @@ export const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Auto-attach access token from localStorage as fallback
+// Auto-attach access token from localStorage on every request
 apiClient.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('access_token');
@@ -18,6 +18,87 @@ apiClient.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// ─── 401 Auto-Refresh Interceptor ─────────────────────────────
+// When any request returns 401, try to silently refresh the JWT.
+// If the refresh succeeds, retry the original request once.
+// If it fails, clear local state and redirect to /login.
+
+let isRefreshing = false;
+let refreshQueue: Array<(token: string) => void> = [];
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const original = error.config;
+
+    // Only intercept 401s that haven't already been retried
+    if (error.response?.status !== 401 || original._retried) {
+      return Promise.reject(error);
+    }
+    original._retried = true;
+
+    // Don't intercept auth endpoints themselves (avoid infinite loops)
+    if (original.url?.includes('/auth/')) {
+      return Promise.reject(error);
+    }
+
+    if (typeof window === 'undefined') return Promise.reject(error);
+
+    const user = JSON.parse(localStorage.getItem('user') ?? 'null');
+    const refreshToken = localStorage.getItem('refresh_token');
+
+    if (!user?.id || !refreshToken) {
+      // No refresh token — send to login
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+      window.location.replace('/login');
+      return Promise.reject(error);
+    }
+
+    // Queue concurrent requests while refresh is in flight
+    if (isRefreshing) {
+      return new Promise((resolve) => {
+        refreshQueue.push((newToken) => {
+          original.headers.Authorization = `Bearer ${newToken}`;
+          resolve(apiClient(original));
+        });
+      });
+    }
+
+    isRefreshing = true;
+    try {
+      const { data } = await apiClient.post('/auth/refresh', {
+        userId: user.id,
+        refreshToken,
+      });
+
+      const newToken = data.accessToken;
+      localStorage.setItem('access_token', newToken);
+      if (data.refreshToken) {
+        localStorage.setItem('refresh_token', data.refreshToken);
+      }
+
+      // Drain the queue
+      refreshQueue.forEach((cb) => cb(newToken));
+      refreshQueue = [];
+
+      // Retry original request
+      original.headers.Authorization = `Bearer ${newToken}`;
+      return apiClient(original);
+    } catch {
+      // Refresh failed — clear session and redirect
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user');
+      window.location.replace('/login');
+      return Promise.reject(error);
+    } finally {
+      isRefreshing = false;
+    }
+  },
+);
+
 
 // ─── Auth Endpoints ───────────────────────────────────────────
 
@@ -103,3 +184,79 @@ export interface ConceptDetail extends ConceptNode {
   unlocks: Array<{ id: string; name: string; difficulty: number }>;
 }
 
+// ─── Questions Types ───────────────────────────────────────────
+
+export type QuestionType = 'MCQ' | 'TRUE_FALSE' | 'SHORT_ANSWER' | 'CODE_SNIPPET';
+export type QuestionDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
+
+export interface Question {
+  id: string;
+  conceptId: string;
+  conceptName: string;
+  domain: string;
+  content: string;
+  questionType: QuestionType;
+  difficulty: QuestionDifficulty;
+  options?: string[];
+  hints: string[];
+  codeSnippet?: string;
+  language?: string;
+  tags: string[];
+}
+
+export interface AttemptResult {
+  attemptId: string;
+  isCorrect: boolean;
+  score: number;
+  correctAnswer: string;
+  explanation: string;
+  xpEarned: number;
+  timeTakenMs: number;
+}
+
+export interface GenerateQuestionsPayload {
+  conceptId: string;
+  conceptName: string;
+  domain: string;
+  difficulty?: QuestionDifficulty;
+  count?: number;
+  questionTypes?: QuestionType[];
+}
+
+// ─── Questions API ─────────────────────────────────────────────
+
+export const questionsApi = {
+  /**
+   * Fetch stored questions for a concept (no LLM call)
+   */
+  getQuestions: (params: {
+    conceptId?: string;
+    difficulty?: QuestionDifficulty;
+    domain?: string;
+    limit?: number;
+  }) =>
+    apiClient.get<Question[]>('/questions', { params }),
+
+  /**
+   * Generate fresh questions via Groq LLM, saves to DB
+   */
+  generate: (payload: GenerateQuestionsPayload) =>
+    apiClient.post<Question[]>('/questions/generate', payload),
+
+  /**
+   * Submit an answer and get immediate feedback
+   */
+  submitAttempt: (payload: {
+    questionId: string;
+    answer: string;
+    timeTakenMs: number;
+    hintsUsed?: number;
+    sessionId?: string;
+  }) => apiClient.post<AttemptResult>('/questions/attempt', payload),
+
+  /**
+   * Get my recent attempt history
+   */
+  getMyAttempts: (limit = 20) =>
+    apiClient.get('/questions/attempts/me', { params: { limit } }),
+};

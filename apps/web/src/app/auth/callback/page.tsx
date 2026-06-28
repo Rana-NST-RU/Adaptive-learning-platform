@@ -10,6 +10,7 @@ function CallbackHandler() {
 
   useEffect(() => {
     const token = params.get('token');
+    const refreshParam = params.get('refresh');
     const userParam = params.get('user');
     const error = params.get('error');
 
@@ -23,6 +24,9 @@ function CallbackHandler() {
       const user = JSON.parse(atob(decodeURIComponent(userParam)));
       localStorage.setItem('access_token', decodeURIComponent(token));
       localStorage.setItem('user', JSON.stringify(user));
+      if (refreshParam) {
+        localStorage.setItem('refresh_token', decodeURIComponent(refreshParam));
+      }
       router.replace('/dashboard');
     } catch (err) {
       console.error('Failed to parse OAuth response:', err);

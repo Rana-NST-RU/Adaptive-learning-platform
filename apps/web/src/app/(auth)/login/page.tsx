@@ -313,6 +313,9 @@ export default function LoginPage() {
         if (data.accessToken) {
           localStorage.setItem('access_token', data.accessToken);
           localStorage.setItem('user', JSON.stringify(data.user));
+          if (data.refreshToken) {
+            localStorage.setItem('refresh_token', data.refreshToken);
+          }
         }
         router.push('/dashboard');
       } catch (apiErr: any) {
@@ -357,6 +360,9 @@ export default function LoginPage() {
       if (data.accessToken) {
         localStorage.setItem('access_token', data.accessToken);
         localStorage.setItem('user', JSON.stringify(data.user));
+        if (data.refreshToken) {
+          localStorage.setItem('refresh_token', data.refreshToken);
+        }
       }
       router.push('/dashboard');
     } catch (err: any) {

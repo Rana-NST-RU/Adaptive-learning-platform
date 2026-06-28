@@ -81,7 +81,7 @@ export class AuthController {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const userData = Buffer.from(JSON.stringify(tokens.user)).toString('base64');
     return res.redirect(
-      `${frontendUrl}/auth/callback?token=${encodeURIComponent(tokens.accessToken)}&user=${encodeURIComponent(userData)}`,
+      `${frontendUrl}/auth/callback?token=${encodeURIComponent(tokens.accessToken)}&refresh=${encodeURIComponent(tokens.refreshToken)}&user=${encodeURIComponent(userData)}`,
     );
   }
 
