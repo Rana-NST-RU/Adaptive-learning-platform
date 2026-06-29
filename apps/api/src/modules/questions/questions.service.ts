@@ -12,6 +12,7 @@ import {
 import { Difficulty, Domain, QuestionType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
+import { TrackerService } from '../learning-tracker/tracker.service';
 import {
   GenerateQuestionsDto,
   GetQuestionsDto,
@@ -34,6 +35,7 @@ export class QuestionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
+    private readonly tracker: TrackerService,
   ) {}
 
   // ─── Generate Questions via LLM ───────────────────────────────────────────
@@ -163,6 +165,10 @@ export class QuestionsService {
 
       // Update ConceptMastery (upsert)
       await this.updateConceptMastery(userId, question, isCorrect, timeTakenMs);
+
+      // Sprint 4: Update Ebbinghaus retention + daily streak (fire-and-forget, non-blocking)
+      this.tracker.updateRetention(userId, question.conceptId, isCorrect).catch(() => {});
+      this.tracker.updateStreak(userId).catch(() => {});
 
       // Award XP if correct
       if (xpEarned > 0) {

@@ -7,6 +7,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { KnowledgeGraphModule } from './modules/knowledge-graph/graph.module';
 import { QuestionsModule } from './modules/questions/questions.module';
+import { TrackerModule } from './modules/learning-tracker/tracker.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { QuestionsModule } from './modules/questions/questions.module';
     UsersModule,
     KnowledgeGraphModule,
     QuestionsModule,
+    TrackerModule,
   ],
 })
 export class AppModule {}

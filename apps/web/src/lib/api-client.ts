@@ -276,3 +276,80 @@ export const questionsApi = {
       params: { conceptIds: conceptIds.join(',') },
     }),
 };
+
+// ─── Tracker Types ─────────────────────────────────────────────
+
+export interface DashboardStats {
+  totalXP: number;
+  currentLevel: number;
+  streak: {
+    current: number;
+    longest: number;
+    freezes: number;
+    lastActiveDate: string | null;
+  };
+  mastery: {
+    totalConcepts: number;
+    masteredCount: number;
+    dsaMastered: number;
+    sdMastered: number;
+  };
+  accuracy: number | null;
+  totalAttempts: number;
+}
+
+export interface Recommendation {
+  conceptId: string;
+  conceptName: string;
+  type: 'LEARN_NEW' | 'REVISE' | 'PRACTICE';
+  reason: string;
+  priority: number;
+}
+
+export interface MasteryOverviewItem {
+  conceptId: string;
+  conceptName: string;
+  domain: string;
+  masteryLevel: number;
+  masteryScore: number;
+  retentionScore: number;
+  memoryStrength: number;
+  nextRevisionDue: string | null;
+  revisionCount: number;
+  totalAttempts: number;
+  correctAttempts: number;
+  lastAttemptAt: string | null;
+  isDue: boolean;
+}
+
+// ─── Tracker API ────────────────────────────────────────────────
+
+export const trackerApi = {
+  /**
+   * Live dashboard stats — XP, streak, mastery count, accuracy
+   */
+  getStats: () => apiClient.get<DashboardStats>('/tracker/stats'),
+
+  /**
+   * Current streak info
+   */
+  getStreak: () => apiClient.get('/tracker/streak'),
+
+  /**
+   * Personalised recommendations (REVISE / LEARN_NEW / PRACTICE)
+   * Combines Neo4j prerequisites with PostgreSQL mastery + forgetting curve
+   */
+  getRecommendations: (domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA') =>
+    apiClient.get<Recommendation[]>('/tracker/recommendations', {
+      params: { domain },
+    }),
+
+  /**
+   * Full mastery overview with live retention scores
+   */
+  getMasteryOverview: (domain?: 'DSA' | 'SYSTEM_DESIGN') =>
+    apiClient.get<MasteryOverviewItem[]>('/tracker/mastery', {
+      params: domain ? { domain } : undefined,
+    }),
+};
+
