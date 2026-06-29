@@ -205,6 +205,25 @@ export class QuestionsService {
     });
   }
 
+  // ─── Concept Mastery for User ─────────────────────────────────────────────
+
+  async getMasteryForConcepts(userId: string, conceptIds: string[]) {
+    const records = await this.prisma.conceptMastery.findMany({
+      where: { userId, conceptId: { in: conceptIds } },
+      select: {
+        conceptId: true,
+        masteryLevel: true,
+        masteryScore: true,
+        totalAttempts: true,
+        correctAttempts: true,
+      },
+    });
+    // Return as map for O(1) lookups on frontend
+    const map: Record<string, typeof records[0]> = {};
+    for (const r of records) map[r.conceptId] = r;
+    return map;
+  }
+
   // ─── Private Helpers ──────────────────────────────────────────────────────
 
   private checkAnswer(question: any, userAnswer: string): boolean {

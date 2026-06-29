@@ -14,7 +14,7 @@ This document outlines the end-to-end development process for the Adaptive Learn
 - **Backend:**
   - `User`, `UserProfile`, and `RefreshToken` Prisma schemas.
   - Firebase Admin integration for Phone OTP.
-  - JWT generation and Redis integration for token blacklisting.
+  - JWT generation and Redis integration for token blacklisting. 
 - **Frontend:**
   - Login & Registration UI (Email, Google, Phone OTP).
   - Axios interceptors for handling authentication tokens securely.

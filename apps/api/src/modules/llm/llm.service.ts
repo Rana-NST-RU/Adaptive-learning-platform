@@ -46,11 +46,19 @@ export class LlmService {
     count: number = 5,
     questionTypes: GeneratedQuestion['questionType'][] = ['MCQ', 'TRUE_FALSE'],
   ): Promise<GeneratedQuestion[]> {
-    const typesStr = questionTypes.join(', ');
+    // For HARD difficulty, include CODE_SNIPPET by default unless caller specified types
+    const defaultTypes =
+      difficulty === 'HARD'
+        ? ['MCQ', 'TRUE_FALSE', 'SHORT_ANSWER', 'CODE_SNIPPET']
+        : ['MCQ', 'TRUE_FALSE'];
+    const resolvedTypes =
+      questionTypes.length > 0 ? questionTypes : defaultTypes;
+
+    const typesStr = resolvedTypes.join(', ');
     const prompt = this.buildPrompt(conceptName, domain, difficulty, count, typesStr);
 
     this.logger.log(
-      `Generating ${count} ${difficulty} questions for concept "${conceptName}" (${domain})`,
+      `Generating ${count} ${difficulty} questions for concept "${conceptName}" (${domain}) — types: ${typesStr}`,
     );
 
     const completion = await this.client.chat.completions.create({
@@ -90,8 +98,8 @@ Question types to generate (mix them): ${types}
 Rules:
 - MCQ: must have exactly 4 options labeled "A) ...", "B) ...", "C) ...", "D) ...". correctAnswer must be "A", "B", "C", or "D"
 - TRUE_FALSE: correctAnswer must be "true" or "false"
-- SHORT_ANSWER: correctAnswer is a concise 1-3 sentence answer
-- CODE_SNIPPET: include a codeSnippet with a bug or blank, correctAnswer is the fix or answer, set language field
+- SHORT_ANSWER: correctAnswer is a concise 1-3 sentence answer. Leave options as null.
+- CODE_SNIPPET: The "content" field is the question text asking the user to fix/complete the code. The "codeSnippet" field must contain actual runnable code with a bug or a blank (use ___ for blanks). correctAnswer is the fixed code or blank answer. Set "language" to the relevant language (e.g. "python", "java", "javascript", "cpp"). Leave options as null.
 
 Return ONLY this JSON structure:
 {

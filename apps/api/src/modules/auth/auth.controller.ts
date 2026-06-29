@@ -73,16 +73,22 @@ export class AuthController {
     @Request() req: any,
     @Res() res: Response,
   ) {
-    const tokens = await this.authService.loginWithGoogle(req.user);
-    this.setTokenCookies(res, tokens.accessToken, tokens.refreshToken);
-
-    // Redirect to a dedicated Next.js callback page that stores token in localStorage.
-    // Cookies are unreliable in cross-port dev (localhost:3001 → localhost:3000).
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const userData = Buffer.from(JSON.stringify(tokens.user)).toString('base64');
-    return res.redirect(
-      `${frontendUrl}/auth/callback?token=${encodeURIComponent(tokens.accessToken)}&refresh=${encodeURIComponent(tokens.refreshToken)}&user=${encodeURIComponent(userData)}`,
-    );
+    try {
+      const tokens = await this.authService.loginWithGoogle(req.user);
+      this.setTokenCookies(res, tokens.accessToken, tokens.refreshToken);
+
+      // Redirect to a dedicated Next.js callback page that stores token in localStorage.
+      // Cookies are unreliable in cross-port dev (localhost:3001 → localhost:3000).
+      const userData = Buffer.from(JSON.stringify(tokens.user)).toString('base64');
+      return res.redirect(
+        `${frontendUrl}/auth/callback?token=${encodeURIComponent(tokens.accessToken)}&refresh=${encodeURIComponent(tokens.refreshToken)}&user=${encodeURIComponent(userData)}`,
+      );
+    } catch (err: any) {
+      // Authorization code already used, network error, etc. — redirect gracefully.
+      console.error('[Auth] Google OAuth callback failed:', err?.message ?? err);
+      return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+    }
   }
 
   // ─────────────────────────────────────────────────────────────

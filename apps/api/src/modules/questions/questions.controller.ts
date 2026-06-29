@@ -49,17 +49,7 @@ export class QuestionsController {
     return this.questionsService.getQuestions(query);
   }
 
-  // ─── GET /questions/:id ──────────────────────────────────────────────────
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get a single question by ID' })
-  @ApiResponse({ status: 200, type: QuestionResponseDto })
-  getOne(@Param('id') id: string): Promise<QuestionResponseDto> {
-    return this.questionsService.getQuestionById(id);
-  }
-
   // ─── POST /questions/generate ─────────────────────────────────────────────
-  // Authenticated — triggers LLM generation and saves to DB
 
   @Post('generate')
   @HttpCode(HttpStatus.CREATED)
@@ -75,7 +65,6 @@ export class QuestionsController {
   }
 
   // ─── POST /questions/attempt ──────────────────────────────────────────────
-  // Authenticated — submit answer, get feedback
 
   @Post('attempt')
   @UseGuards(OptionalJwtAuthGuard)
@@ -91,11 +80,11 @@ export class QuestionsController {
     @Request() req: any,
     @Body() dto: SubmitAttemptDto,
   ): Promise<AttemptResultDto> {
-    // Pass userId if logged in, null for anonymous (result returned but not persisted)
     return this.questionsService.submitAttempt(req.user?.id ?? null, dto);
   }
 
   // ─── GET /questions/attempts/me ───────────────────────────────────────────
+  // NOTE: all static GET routes must be declared BEFORE @Get(':id')
 
   @Get('attempts/me')
   @UseGuards(JwtAuthGuard)
@@ -106,5 +95,31 @@ export class QuestionsController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
     return this.questionsService.getMyAttempts(req.user.id, limit);
+  }
+
+  // ─── GET /questions/mastery ───────────────────────────────────────────────
+
+  @Get('mastery')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get mastery data for a list of concept IDs (auth optional)' })
+  @ApiQuery({ name: 'conceptIds', required: true, description: 'Comma-separated concept IDs' })
+  getMastery(
+    @Request() req: any,
+    @Query('conceptIds') conceptIds: string,
+  ) {
+    if (!req.user?.id || !conceptIds) return {};
+    const ids = conceptIds.split(',').filter(Boolean);
+    return this.questionsService.getMasteryForConcepts(req.user.id, ids);
+  }
+
+  // ─── GET /questions/:id ──────────────────────────────────────────────────
+  // IMPORTANT: keep this LAST — the :id wildcard would shadow all routes above it
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a single question by ID' })
+  @ApiResponse({ status: 200, type: QuestionResponseDto })
+  getOne(@Param('id') id: string): Promise<QuestionResponseDto> {
+    return this.questionsService.getQuestionById(id);
   }
 }

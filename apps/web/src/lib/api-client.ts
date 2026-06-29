@@ -223,6 +223,14 @@ export interface GenerateQuestionsPayload {
   questionTypes?: QuestionType[];
 }
 
+export interface MasteryData {
+  conceptId: string;
+  masteryLevel: number;   // 0–4
+  masteryScore: number;   // 0.0–1.0
+  totalAttempts: number;
+  correctAttempts: number;
+}
+
 // ─── Questions API ─────────────────────────────────────────────
 
 export const questionsApi = {
@@ -259,4 +267,12 @@ export const questionsApi = {
    */
   getMyAttempts: (limit = 20) =>
     apiClient.get('/questions/attempts/me', { params: { limit } }),
+
+  /**
+   * Get mastery data for a list of concept IDs (requires auth)
+   */
+  getMastery: (conceptIds: string[]) =>
+    apiClient.get<Record<string, MasteryData>>('/questions/mastery', {
+      params: { conceptIds: conceptIds.join(',') },
+    }),
 };
