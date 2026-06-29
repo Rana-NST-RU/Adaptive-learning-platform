@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { questionsApi, graphApi } from '@/lib/api-client';
+import { questionsApi, graphApi, trackerApi } from '@/lib/api-client';
 import type { Question, AttemptResult, QuestionDifficulty, MasteryData } from '@/lib/api-client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,7 +67,10 @@ export default function PracticePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [wrongQuestions, setWrongQuestions] = useState<Question[]>([]); // #1 retry
-  const [xpAnim, setXpAnim] = useState<{ visible: boolean; xp: number }>({ visible: false, xp: 0 }); // #5 XP anim
+  const [xpAnim, setXpAnim] = useState<{ visible: boolean; xp: number; multiplier?: number }>({ visible: false, xp: 0 });
+  // Sprint 4 refinements
+  const [confidenceGiven, setConfidenceGiven] = useState<number | null>(null); // FSRS grade 1-4
+  const [levelUpAnim, setLevelUpAnim] = useState<{ visible: boolean; level: number; conceptName: string } | null>(null);
   const startTimeRef = useRef<number>(Date.now());
 
   // #3 — Restore session from localStorage on mount
@@ -202,12 +206,23 @@ export default function PracticePage() {
     try {
       const res = await questionsApi.submitAttempt({ questionId: q.id, answer, timeTakenMs, hintsUsed: hintsShown });
       setResult(res.data);
+      setConfidenceGiven(null); // reset for new question
       // #1 — track wrong answers for retry
       if (!res.data.isCorrect) setWrongQuestions(prev => [...prev, q]);
-      // #5 — trigger XP animation
+      // Sprint 4: XP animation with streak multiplier
       if (res.data.xpEarned > 0) {
-        setXpAnim({ visible: true, xp: res.data.xpEarned });
-        setTimeout(() => setXpAnim({ visible: false, xp: 0 }), 1800);
+        setXpAnim({ visible: true, xp: res.data.xpEarned, multiplier: res.data.xpMultiplier });
+        setTimeout(() => setXpAnim({ visible: false, xp: 0 }), 2200);
+      }
+      // Sprint 4: Level-up detection
+      if (
+        res.data.newMasteryLevel !== undefined &&
+        res.data.prevMasteryLevel !== undefined &&
+        res.data.newMasteryLevel > res.data.prevMasteryLevel
+      ) {
+        const LEVEL_NAMES = ['Not Started', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
+        setLevelUpAnim({ visible: true, level: res.data.newMasteryLevel, conceptName: q.conceptName });
+        setTimeout(() => setLevelUpAnim(null), 3500);
       }
       setStats(prev => ({
         total: prev.total + 1,
@@ -221,19 +236,25 @@ export default function PracticePage() {
     }
   }, [questions, currentIndex, selectedOption, tfAnswer, shortAnswer, hintsShown]);
 
-  const nextQuestion = useCallback(() => {
+  const nextQuestion = useCallback((confidence?: number) => {
+    // If user has rated confidence and there's a pending attemptId, send it
+    const attemptId = result?.attemptId;
+    if (confidence && attemptId && !attemptId.startsWith('anonymous-')) {
+      trackerApi.rateConfidence(attemptId, confidence as 1 | 2 | 3 | 4).catch(() => {});
+    }
     if (currentIndex + 1 >= questions.length) {
       setPhase('summary');
     } else {
       setCurrentIndex(i => i + 1);
       setResult(null);
+      setConfidenceGiven(null);
       setSelectedOption(null);
       setTfAnswer(null);
       setShortAnswer('');
       setHintsShown(0);
       startTimeRef.current = Date.now();
     }
-  }, [currentIndex, questions.length]);
+  }, [currentIndex, questions.length, result]);
 
   // #1 — Start retry session with wrong answers only
   const startRetrySession = useCallback(() => {
@@ -305,11 +326,13 @@ export default function PracticePage() {
           tfAnswer={tfAnswer}
           shortAnswer={shortAnswer}
           xpAnim={xpAnim}
+          confidenceGiven={confidenceGiven}
           onSelectOption={setSelectedOption}
           onSetTf={setTfAnswer}
           onSetShortAnswer={setShortAnswer}
           onRevealHint={() => setHintsShown(h => Math.min(h + 1, (questions[currentIndex]?.hints?.length ?? 0)))}
           onSubmit={submitAnswer}
+          onRateConfidence={(g: number) => setConfidenceGiven(g)}
           onNext={nextQuestion}
         />
       )}
@@ -322,6 +345,15 @@ export default function PracticePage() {
           onRestart={() => { setSelectedConcept(null); setWrongQuestions([]); setPhase('concept-picker'); }}
           onRepeat={startSession}
           onRetryWrong={startRetrySession}
+        />
+      )}
+
+      {/* Sprint 4: Level-up overlay */}
+      {levelUpAnim?.visible && (
+        <LevelUpOverlay
+          level={levelUpAnim.level}
+          conceptName={levelUpAnim.conceptName}
+          onDone={() => setLevelUpAnim(null)}
         />
       )}
     </div>
@@ -651,8 +683,8 @@ function SyntaxHighlighter({ code, lang = 'python' }: { code: string; lang?: str
 
 function SessionView({
   question, questionIndex, totalQuestions, result, hintsShown,
-  selectedOption, tfAnswer, shortAnswer, xpAnim,
-  onSelectOption, onSetTf, onSetShortAnswer, onRevealHint, onSubmit, onNext,
+  selectedOption, tfAnswer, shortAnswer, xpAnim, confidenceGiven,
+  onSelectOption, onSetTf, onSetShortAnswer, onRevealHint, onSubmit, onNext, onRateConfidence,
 }: any) {
   const q: Question = question;
   const answered = result !== null;
@@ -664,7 +696,9 @@ function SessionView({
       // Don't fire shortcuts when typing in textarea/input
       if ((e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT') return;
       if (answered) {
-        if (e.key === 'Enter' || e.key === 'ArrowRight') onNext();
+        if (e.key === 'Enter' || e.key === 'ArrowRight') onNext(confidenceGiven ?? undefined);
+        // Number keys 1-4 to rate confidence when result is shown
+        if (['1','2','3','4'].includes(e.key)) { onRateConfidence(parseInt(e.key)); }
         return;
       }
       if (q.questionType === 'MCQ' && q.options) {
@@ -687,15 +721,21 @@ function SessionView({
 
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', position: 'relative' }}>
-      {/* #5 — XP Animation overlay */}
+      {/* Sprint 4: XP Animation with streak multiplier */}
       {xpAnim?.visible && (
         <div style={{
           position: 'fixed', top: '20%', right: '5%', zIndex: 1000,
-          fontSize: 28, fontWeight: 800, color: '#a5b4fc',
-          animation: 'xpFloat 1.8s ease forwards',
-          pointerEvents: 'none', textShadow: '0 0 20px rgba(99,102,241,0.8)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+          animation: 'xpFloat 2.2s ease forwards', pointerEvents: 'none',
         }}>
-          +{xpAnim.xp} XP
+          <div style={{ fontSize: 28, fontWeight: 800, color: '#a5b4fc', textShadow: '0 0 20px rgba(99,102,241,0.8)' }}>
+            +{xpAnim.xp} XP
+          </div>
+          {xpAnim.multiplier && xpAnim.multiplier > 1.0 && (
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#fb923c', background: 'rgba(249,115,22,0.15)', padding: '2px 10px', borderRadius: 20 }}>
+              🔥 ×{xpAnim.multiplier.toFixed(1)} streak bonus!
+            </div>
+          )}
         </div>
       )}
 
@@ -879,6 +919,41 @@ function SessionView({
         </div>
       )}
 
+      {/* Sprint 4: Confidence Rating Panel (shown after result revealed) */}
+      {answered && (
+        <div style={{
+          padding: '16px 20px', borderRadius: 14, marginBottom: 12,
+          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+          animation: 'fadeIn 0.3s ease',
+        }}>
+          <p style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600, marginBottom: 10, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            How confident were you? <span style={{ opacity: 0.5 }}>(1-4 to rate)</span>
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {[
+              { grade: 1, label: 'Again', sub: 'Didn\'t recall', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+              { grade: 2, label: 'Hard', sub: 'Recalled with effort', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+              { grade: 3, label: 'Good', sub: 'Recalled correctly', color: '#6366f1', bg: 'rgba(99,102,241,0.1)' },
+              { grade: 4, label: 'Easy', sub: 'Effortless recall', color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
+            ].map(({ grade, label, sub, color, bg }) => (
+              <button
+                key={grade}
+                onClick={() => onRateConfidence(grade)}
+                style={{
+                  padding: '10px 8px', borderRadius: 10, border: `1px solid ${confidenceGiven === grade ? color : 'rgba(255,255,255,0.07)'}`,
+                  background: confidenceGiven === grade ? bg : 'transparent',
+                  cursor: 'pointer', transition: 'all 0.15s',
+                  transform: confidenceGiven === grade ? 'scale(1.05)' : 'scale(1)',
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: confidenceGiven === grade ? color : '#94a3b8' }}>{label}</div>
+                <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>{sub}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 12 }}>
         {!answered && (
@@ -896,7 +971,7 @@ function SessionView({
           </button>
         )}
         {answered && (
-          <button onClick={onNext} style={{
+          <button onClick={() => onNext(confidenceGiven ?? undefined)} style={{
             flex: 1, padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer',
             background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
             color: '#fff', fontWeight: 700, fontSize: 16,
@@ -989,6 +1064,68 @@ function SummaryScreen({ stats, concept, wrongCount, onRestart, onRepeat, onRetr
       </div>
 
       <style>{`@keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 60% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }`}</style>
+    </div>
+  );
+}
+
+// ─── Level-Up Overlay (Sprint 4) ──────────────────────────────────────────────
+
+const LEVEL_NAMES = ['Not Started', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
+const LEVEL_COLORS = ['#475569', '#6366f1', '#8b5cf6', '#f59e0b', '#10b981'];
+const LEVEL_ICONS = ['⚪', '🔵', '🟣', '🟡', '🌟'];
+
+function LevelUpOverlay({ level, conceptName, onDone }: { level: number; conceptName: string; onDone: () => void }) {
+  const color = LEVEL_COLORS[level] ?? '#6366f1';
+  const icon = LEVEL_ICONS[level] ?? '✨';
+  const name = LEVEL_NAMES[level] ?? 'Expert';
+
+  return (
+    <div
+      onClick={onDone}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999, display: 'flex',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(2,6,23,0.92)', backdropFilter: 'blur(12px)',
+        animation: 'fadeIn 0.3s ease',
+        cursor: 'pointer',
+      }}
+    >
+      <div style={{
+        textAlign: 'center',
+        animation: 'levelUpPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
+      }}>
+        {/* Radial glow burst */}
+        <div style={{
+          width: 200, height: 200, borderRadius: '50%', margin: '0 auto 28px',
+          background: `radial-gradient(circle, ${color}33 0%, transparent 70%)`,
+          boxShadow: `0 0 60px ${color}55, 0 0 120px ${color}22`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 72, animation: 'rotate 8s linear infinite',
+        }}>
+          {icon}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#64748b', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 8 }}>
+          LEVEL UP!
+        </div>
+        <div style={{ fontSize: 48, fontWeight: 900, color, marginBottom: 8, textShadow: `0 0 30px ${color}80` }}>
+          {name}
+        </div>
+        <div style={{ fontSize: 15, color: '#94a3b8', marginBottom: 4 }}>
+          You&apos;ve reached <strong style={{ color: '#e2e8f0' }}>{name}</strong> in
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0', marginBottom: 28 }}>
+          {conceptName}
+        </div>
+        <div style={{ fontSize: 13, color: '#475569' }}>click anywhere to continue</div>
+      </div>
+      <style>{`
+        @keyframes levelUpPop {
+          0% { transform: scale(0.5) translateY(30px); opacity: 0; }
+          80% { transform: scale(1.05) translateY(-5px); opacity: 1; }
+          100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }

@@ -212,6 +212,12 @@ export interface AttemptResult {
   explanation: string;
   xpEarned: number;
   timeTakenMs: number;
+  /** Streak XP multiplier (1.0 = no bonus) */
+  xpMultiplier: number;
+  /** Mastery level before this attempt (0-4) — undefined for anonymous */
+  prevMasteryLevel?: number;
+  /** Mastery level after this attempt (0-4) — if > prevMasteryLevel, trigger level-up animation */
+  newMasteryLevel?: number;
 }
 
 export interface GenerateQuestionsPayload {
@@ -260,6 +266,8 @@ export const questionsApi = {
     timeTakenMs: number;
     hintsUsed?: number;
     sessionId?: string;
+    /** FSRS grade: 1=Again, 2=Hard, 3=Good, 4=Easy (captured after result revealed) */
+    confidenceRating?: number;
   }) => apiClient.post<AttemptResult>('/questions/attempt', payload),
 
   /**
@@ -314,6 +322,7 @@ export interface MasteryOverviewItem {
   masteryScore: number;
   retentionScore: number;
   memoryStrength: number;
+  fsrsDifficulty: number;
   nextRevisionDue: string | null;
   revisionCount: number;
   totalAttempts: number;
@@ -322,34 +331,68 @@ export interface MasteryOverviewItem {
   isDue: boolean;
 }
 
+export interface DailyPlan {
+  totalEstimatedMins: number;
+  dailyGoalMins: number;
+  multiplier: number;
+  streak: number;
+  revisions: Array<{
+    conceptId: string;
+    conceptName: string;
+    retentionScore: number;
+    nextRevisionDue: string;
+    estimatedMins: number;
+  }>;
+  learnNew: { conceptId: string; conceptName: string; estimatedMins: number } | null;
+  practice: { conceptId: string; conceptName: string; masteryScore: number; estimatedMins: number } | null;
+}
+
+export interface LearningInsights {
+  totalAttempts: number;
+  optimalHours: string | null;
+  optimalHourAccuracy: number | null;
+  bestDay: string | null;
+  hourlyBreakdown: Array<{ hour: number; label: string; accuracy: number; count: number }>;
+  message?: string;
+}
+
 // ─── Tracker API ────────────────────────────────────────────────
 
 export const trackerApi = {
-  /**
-   * Live dashboard stats — XP, streak, mastery count, accuracy
-   */
+  /** Live dashboard stats — XP, streak (+ multiplier), mastery counts, accuracy */
   getStats: () => apiClient.get<DashboardStats>('/tracker/stats'),
 
-  /**
-   * Current streak info
-   */
+  /** Current streak info + XP multiplier */
   getStreak: () => apiClient.get('/tracker/streak'),
 
-  /**
-   * Personalised recommendations (REVISE / LEARN_NEW / PRACTICE)
-   * Combines Neo4j prerequisites with PostgreSQL mastery + forgetting curve
-   */
+  /** Personalised recommendations (REVISE / LEARN_NEW / PRACTICE) */
   getRecommendations: (domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA') =>
-    apiClient.get<Recommendation[]>('/tracker/recommendations', {
-      params: { domain },
-    }),
+    apiClient.get<Recommendation[]>('/tracker/recommendations', { params: { domain } }),
 
-  /**
-   * Full mastery overview with live retention scores
-   */
+  /** Full mastery overview with live FSRS retention scores */
   getMasteryOverview: (domain?: 'DSA' | 'SYSTEM_DESIGN') =>
     apiClient.get<MasteryOverviewItem[]>('/tracker/mastery', {
       params: domain ? { domain } : undefined,
     }),
-};
 
+  /** Today's personalised study plan */
+  getDailyPlan: (domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA') =>
+    apiClient.get<DailyPlan>('/tracker/plan', { params: { domain } }),
+
+  /** Concepts due for review (Smart Review Session) */
+  getDueConcepts: (domain?: 'DSA' | 'SYSTEM_DESIGN') =>
+    apiClient.get<MasteryOverviewItem[]>('/tracker/due-concepts', {
+      params: domain ? { domain } : undefined,
+    }),
+
+  /** Learning insights — optimal study hours, best day-of-week */
+  getInsights: () => apiClient.get<LearningInsights>('/tracker/insights'),
+
+  /**
+   * Rate confidence after seeing the result (FSRS grade 1-4).
+   * Call this AFTER result is revealed — do not await (fire-and-forget).
+   * 1=Again, 2=Hard, 3=Good, 4=Easy
+   */
+  rateConfidence: (attemptId: string, grade: 1 | 2 | 3 | 4) =>
+    apiClient.post('/tracker/rate-confidence', { attemptId, grade }),
+};

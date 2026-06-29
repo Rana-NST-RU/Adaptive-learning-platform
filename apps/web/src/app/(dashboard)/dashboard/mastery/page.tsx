@@ -1,332 +1,499 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { trackerApi } from '@/lib/api-client';
 import type { MasteryOverviewItem } from '@/lib/api-client';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Radar Chart (pure SVG, no dependencies) ─────────────────────────────────
 
-const LEVEL_LABELS = ['Not Started', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
-const LEVEL_COLORS = ['#334155', '#6366f1', '#f59e0b', '#10b981', '#f97316'];
-const LEVEL_ICONS  = ['○', '◔', '◑', '◕', '●'];
-
-function retentionColor(r: number): string {
-  if (r >= 0.8) return '#10b981'; // green — fresh
-  if (r >= 0.5) return '#f59e0b'; // yellow — fading
-  return '#ef4444';               // red — due
+interface RadarDatum {
+  label: string;
+  value: number; // 0-1
+  color: string;
 }
 
-function retentionLabel(r: number): string {
-  if (r >= 0.8) return 'Fresh';
-  if (r >= 0.5) return 'Fading';
-  return 'Due';
-}
+function RadarChart({ data, size = 260 }: { data: RadarDatum[]; size?: number }) {
+  if (!data.length) return null;
+  const cx = size / 2;
+  const cy = size / 2;
+  const maxR = (size / 2) * 0.78;
+  const levels = 4;
+  const n = data.length;
 
-function memoryStrengthLabel(s: number): string {
-  if (s >= 30) return `${Math.round(s)}d`;
-  if (s >= 1)  return `${s.toFixed(1)}d`;
-  return `${Math.round(s * 24)}h`;
-}
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return 'never';
-  const diff = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(diff / 86400000);
-  const hours = Math.floor(diff / 3600000);
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  return 'recently';
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default function MasteryPage() {
-  const [masteries, setMasteries] = useState<MasteryOverviewItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState<string | null>(null);
-  const [domain, setDomain] = useState<'DSA' | 'SYSTEM_DESIGN' | 'ALL'>('DSA');
-  const [sort, setSort]     = useState<'due' | 'level' | 'name' | 'retention'>('due');
-
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    trackerApi.getMasteryOverview(domain === 'ALL' ? undefined : domain)
-      .then(r => setMasteries(r.data))
-      .catch(err => {
-        setError(err?.response?.status === 401 ? 'Please log in to view your mastery data.' : 'Failed to load mastery data.');
-      })
-      .finally(() => setLoading(false));
-  }, [domain]);
-
-  const sorted = [...masteries].sort((a, b) => {
-    if (sort === 'due') {
-      // Due first, then by nextRevisionDue ascending
-      if (a.isDue && !b.isDue) return -1;
-      if (!a.isDue && b.isDue) return 1;
-      if (a.nextRevisionDue && b.nextRevisionDue)
-        return new Date(a.nextRevisionDue).getTime() - new Date(b.nextRevisionDue).getTime();
-      return 0;
-    }
-    if (sort === 'level')     return b.masteryLevel - a.masteryLevel;
-    if (sort === 'retention') return a.retentionScore - b.retentionScore;
-    return a.conceptName.localeCompare(b.conceptName);
+  const getXY = (angle: number, r: number) => ({
+    x: cx + r * Math.cos(angle - Math.PI / 2),
+    y: cy + r * Math.sin(angle - Math.PI / 2),
   });
 
-  const dueCount      = masteries.filter(m => m.isDue).length;
-  const masteredCount = masteries.filter(m => m.masteryLevel >= 3).length;
-  const avgRetention  = masteries.length > 0
-    ? Math.round((masteries.reduce((s, m) => s + m.retentionScore, 0) / masteries.length) * 100)
-    : null;
+  const angles = data.map((_, i) => (2 * Math.PI * i) / n);
 
-  // Domain radar chart — aggregate mastery by category from conceptName prefixes
-  const categoryMap: Record<string, { total: number; sumScore: number }> = {};
-  masteries.forEach(m => {
-    const cat = m.conceptName.split(' ')[0]; // rough grouping by first word
-    if (!categoryMap[cat]) categoryMap[cat] = { total: 0, sumScore: 0 };
-    categoryMap[cat].total++;
-    categoryMap[cat].sumScore += m.masteryScore;
+  // Grid rings
+  const gridRings = Array.from({ length: levels }, (_, i) => {
+    const r = (maxR * (i + 1)) / levels;
+    const pts = angles.map(a => {
+      const p = getXY(a, r);
+      return `${p.x},${p.y}`;
+    }).join(' ');
+    return <polygon key={i} points={pts} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={1} />;
+  });
+
+  // Axes
+  const axes = angles.map((a, i) => {
+    const p = getXY(a, maxR);
+    return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(255,255,255,0.08)" strokeWidth={1} />;
+  });
+
+  // Data polygon
+  const dataPoints = data.map((d, i) => {
+    const r = d.value * maxR;
+    return getXY(angles[i], r);
+  });
+  const polyPts = dataPoints.map(p => `${p.x},${p.y}`).join(' ');
+
+  // Labels (slightly outside)
+  const labelRadius = maxR + 22;
+  const labels = data.map((d, i) => {
+    const p = getXY(angles[i], labelRadius);
+    const anchor = p.x < cx - 2 ? 'end' : p.x > cx + 2 ? 'start' : 'middle';
+    return (
+      <text key={i} x={p.x} y={p.y + 4} textAnchor={anchor as any} fontSize={10} fill="#64748b" fontWeight={600}>
+        {d.label.length > 12 ? d.label.slice(0, 10) + '…' : d.label}
+      </text>
+    );
   });
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 1000, margin: '0 auto' }}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {gridRings}
+      {axes}
+      {/* 90% target ring */}
+      <polygon
+        points={angles.map(a => { const p = getXY(a, maxR * 0.9); return `${p.x},${p.y}`; }).join(' ')}
+        fill="none" stroke="rgba(99,102,241,0.2)" strokeWidth={1} strokeDasharray="4 3"
+      />
+      {/* Data shape */}
+      <polygon
+        points={polyPts}
+        fill="rgba(99,102,241,0.2)"
+        stroke="#6366f1"
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      {/* Dots */}
+      {dataPoints.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={4} fill={data[i].color} stroke="#0f172a" strokeWidth={2} />
+      ))}
+      {labels}
+    </svg>
+  );
+}
+
+// ─── Retention Sparkline (pure SVG) ───────────────────────────────────────────
+
+function RetentionSparkline({ retention, stability, width = 80, height = 24 }: {
+  retention: number; stability: number; width?: number; height?: number;
+}) {
+  // Plot FSRS decay curve: R(t,S) = (1 + t/(9S))^(-1), from today to today+2S
+  const points = useMemo(() => {
+    const pts: string[] = [];
+    const totalDays = Math.max(stability * 2, 14);
+    const steps = 30;
+    for (let i = 0; i <= steps; i++) {
+      const t = (totalDays * i) / steps;
+      const R = Math.pow(1 + t / (9 * Math.max(stability, 0.1)), -1);
+      const x = (width * i) / steps;
+      const y = height - R * height;
+      pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+    return pts.join(' ');
+  }, [stability, width, height]);
+
+  const retColor = retention >= 0.8 ? '#10b981' : retention >= 0.5 ? '#f59e0b' : '#ef4444';
+  const fillPts = `0,${height} ${points} ${width},${height}`;
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      <polygon points={fillPts} fill={`${retColor}22`} />
+      <polyline points={points} fill="none" stroke={retColor} strokeWidth={1.5} strokeLinecap="round" />
+      {/* Current position dot at t=0 */}
+      <circle
+        cx={0}
+        cy={(height - retention * height).toFixed(1)}
+        r={3}
+        fill={retColor}
+      />
+    </svg>
+  );
+}
+
+// ─── Mastery Page ─────────────────────────────────────────────────────────────
+
+const LEVEL_LABELS = ['Not Started', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
+const LEVEL_COLORS = ['#475569', '#6366f1', '#8b5cf6', '#f59e0b', '#10b981'];
+const LEVEL_ICONS = ['⚪', '🔵', '🟣', '🟡', '🌟'];
+
+export default function MasteryPage() {
+  const [domain, setDomain] = useState<'DSA' | 'SYSTEM_DESIGN'>('DSA');
+  const [masteries, setMasteries] = useState<MasteryOverviewItem[]>([]);
+  const [dueCount, setDueCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<'level' | 'retention' | 'due'>('level');
+  const [activeTab, setActiveTab] = useState<'map' | 'radar' | 'insights'>('map');
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      trackerApi.getMasteryOverview(domain),
+      trackerApi.getDueConcepts(domain),
+    ])
+      .then(([mastRes, dueRes]) => {
+        setMasteries(mastRes.data);
+        setDueCount(dueRes.data.length);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [domain]);
+
+  const sorted = useMemo(() => {
+    const arr = [...masteries];
+    if (sortBy === 'level') return arr.sort((a, b) => b.masteryLevel - a.masteryLevel);
+    if (sortBy === 'retention') return arr.sort((a, b) => (a.retentionScore ?? 1) - (b.retentionScore ?? 1));
+    if (sortBy === 'due') return arr.sort((a, b) => {
+      const da = a.isDue ? 0 : 1;
+      const db = b.isDue ? 0 : 1;
+      return da - db;
+    });
+    return arr;
+  }, [masteries, sortBy]);
+
+  // Radar chart data — top 6 concepts by attempt count
+  const radarData = useMemo((): RadarDatum[] => {
+    return masteries
+      .filter(m => m.totalAttempts > 0)
+      .sort((a, b) => b.totalAttempts - a.totalAttempts)
+      .slice(0, 6)
+      .map(m => ({
+        label: m.conceptName,
+        value: m.masteryScore,
+        color: LEVEL_COLORS[m.masteryLevel] ?? '#6366f1',
+      }));
+  }, [masteries]);
+
+  // Stats
+  const stats = useMemo(() => ({
+    total: masteries.length,
+    mastered: masteries.filter(m => m.masteryLevel >= 3).length,
+    due: masteries.filter(m => m.isDue).length,
+    avgRetention: masteries.length > 0
+      ? Math.round(masteries.reduce((s, m) => s + (m.retentionScore ?? 0), 0) / masteries.length * 100)
+      : 0,
+  }), [masteries]);
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 44, height: 44, borderRadius: '50%', border: '3px solid rgba(99,102,241,0.2)', borderTopColor: '#6366f1', animation: 'spin 0.8s linear infinite' }} />
+        <p style={{ color: '#64748b', fontSize: 15 }}>Loading mastery data…</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 60px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
-        <Link href="/dashboard" style={{
-          padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)',
-          background: 'rgba(255,255,255,0.04)', color: '#64748b', fontSize: 13,
-          textDecoration: 'none', fontWeight: 500,
-        }}>← Dashboard</Link>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: '#f1f5f9', margin: 0 }}>
-            🧠 Mastery Map
-          </h1>
-          <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 13 }}>
-            Track your retention & forgetting curves across all concepts
-          </p>
+      <div style={{ marginBottom: 36 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <Link href="/dashboard" style={{ color: '#64748b', textDecoration: 'none', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+            ← Dashboard
+          </Link>
         </div>
-      </div>
-
-      {/* Summary cards */}
-      {!loading && !error && masteries.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
-          {[
-            { label: 'Concepts Tracked', value: masteries.length, color: '#a5b4fc', icon: '📚' },
-            { label: 'Mastered (Adv+)', value: masteredCount, color: '#10b981', icon: '🏆' },
-            { label: 'Due for Revision', value: dueCount, color: dueCount > 0 ? '#ef4444' : '#10b981', icon: '🔁' },
-            { label: 'Avg Retention', value: avgRetention !== null ? `${avgRetention}%` : '—', color: retentionColor((avgRetention ?? 100) / 100), icon: '🧬' },
-          ].map((s, i) => (
-            <div key={i} style={{
-              padding: '16px 18px', borderRadius: 14,
-              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
-            }}>
-              <div style={{ fontSize: 11, color: '#475569', marginBottom: 6 }}>{s.icon} {s.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: s.color }}>{s.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['DSA', 'SYSTEM_DESIGN', 'ALL'] as const).map(d => (
-            <button key={d} onClick={() => setDomain(d)} style={{
-              padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              fontWeight: 600, fontSize: 12,
-              background: domain === d ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.04)',
-              color: domain === d ? '#a5b4fc' : '#64748b',
-            }}>
-              {d === 'SYSTEM_DESIGN' ? 'Sys Design' : d}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#475569' }}>Sort:</span>
-          {[['due', '🔁 Due first'], ['level', '🏆 Level'], ['retention', '🧬 Retention'], ['name', 'A–Z']] .map(([v, l]) => (
-            <button key={v} onClick={() => setSort(v as any)} style={{
-              padding: '5px 10px', borderRadius: 7, border: 'none', cursor: 'pointer',
-              fontSize: 11, fontWeight: 600,
-              background: sort === v ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
-              color: sort === v ? '#a5b4fc' : '#475569',
-            }}>{l}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Due banner */}
-      {!loading && !error && dueCount > 0 && sort === 'due' && (
-        <div style={{
-          padding: '12px 16px', borderRadius: 12, marginBottom: 16,
-          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <span style={{ fontSize: 20 }}>🔁</span>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <div style={{ fontWeight: 700, color: '#fca5a5', fontSize: 13 }}>{dueCount} concept{dueCount > 1 ? 's' : ''} due for revision</div>
-            <div style={{ fontSize: 12, color: '#64748b' }}>Review these to keep your memory fresh</div>
+            <h1 style={{ fontSize: 32, fontWeight: 900, color: '#e2e8f0', marginBottom: 6 }}>
+              Mastery Map
+            </h1>
+            <p style={{ color: '#64748b', fontSize: 15 }}>Your personalised knowledge radar — powered by FSRS spaced repetition</p>
           </div>
-          <Link href="/dashboard/practice" style={{
-            marginLeft: 'auto', padding: '7px 16px', borderRadius: 8, fontSize: 13,
-            background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)',
-            color: '#fca5a5', fontWeight: 700, textDecoration: 'none',
-          }}>Revise Now →</Link>
+          {/* Smart Review CTA */}
+          {dueCount > 0 && (
+            <Link href="/dashboard/practice?mode=review" style={{ textDecoration: 'none' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px',
+                background: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(245,158,11,0.1))',
+                border: '1px solid rgba(239,68,68,0.3)', borderRadius: 14, cursor: 'pointer',
+                animation: 'pulseGlow 2s infinite',
+              }}>
+                <span style={{ fontSize: 20 }}>🔔</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fca5a5' }}>Review Now</div>
+                  <div style={{ fontSize: 11, color: '#ef4444' }}>{dueCount} concept{dueCount > 1 ? 's' : ''} due</div>
+                </div>
+              </div>
+            </Link>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Loading skeleton */}
-      {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} style={{ height: 80, borderRadius: 14, background: 'rgba(255,255,255,0.04)', animation: 'shimmer 1.5s infinite' }} />
+      {/* Domain Toggle */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 28 }}>
+        {(['DSA', 'SYSTEM_DESIGN'] as const).map(d => (
+          <button key={d} onClick={() => setDomain(d)} style={{
+            padding: '8px 20px', borderRadius: 30, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+            background: domain === d ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(255,255,255,0.05)',
+            color: domain === d ? '#fff' : '#64748b', transition: 'all 0.2s',
+            boxShadow: domain === d ? '0 4px 16px rgba(99,102,241,0.3)' : 'none',
+          }}>{d.replace('_', ' ')}</button>
+        ))}
+      </div>
+
+      {/* Stats strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+        {[
+          { label: 'Total Concepts', value: stats.total, icon: '📚' },
+          { label: 'Mastered', value: stats.mastered, icon: '🏆' },
+          { label: 'Due for Review', value: stats.due, icon: '🔔', alert: stats.due > 0 },
+          { label: 'Avg Retention', value: `${stats.avgRetention}%`, icon: '🧠' },
+        ].map(({ label, value, icon, alert }) => (
+          <div key={label} style={{
+            padding: '18px 20px', borderRadius: 16,
+            background: alert ? 'rgba(239,68,68,0.07)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${alert ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)'}`,
+          }}>
+            <div style={{ fontSize: 22, marginBottom: 8 }}>{icon}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: alert ? '#fca5a5' : '#e2e8f0' }}>{value}</div>
+            <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, marginTop: 4 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 28, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, width: 'fit-content' }}>
+        {([
+          { key: 'map', label: '📋 Concept Map' },
+          { key: 'radar', label: '🕸️ Radar Chart' },
+          { key: 'insights', label: '📊 Retention Decay' },
+        ] as const).map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+            padding: '8px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+            background: activeTab === tab.key ? 'rgba(99,102,241,0.2)' : 'transparent',
+            color: activeTab === tab.key ? '#a5b4fc' : '#64748b', transition: 'all 0.2s',
+          }}>{tab.label}</button>
+        ))}
+      </div>
+
+      {/* Sort bar */}
+      {activeTab === 'map' && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center' }}>
+          <span style={{ color: '#64748b', fontSize: 12, fontWeight: 600 }}>Sort by:</span>
+          {[
+            { key: 'level', label: 'Mastery Level' },
+            { key: 'retention', label: 'Lowest Retention' },
+            { key: 'due', label: 'Due First' },
+          ].map(({ key, label }) => (
+            <button key={key} onClick={() => setSortBy(key as any)} style={{
+              padding: '4px 12px', borderRadius: 20, border: `1px solid ${sortBy === key ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.06)'}`,
+              background: sortBy === key ? 'rgba(99,102,241,0.1)' : 'transparent',
+              color: sortBy === key ? '#a5b4fc' : '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}>{label}</button>
           ))}
         </div>
       )}
 
-      {/* Error */}
-      {!loading && error && (
-        <div style={{ padding: '32px', textAlign: 'center', background: 'rgba(239,68,68,0.07)', borderRadius: 16, border: '1px solid rgba(239,68,68,0.2)' }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>⚠️</div>
-          <div style={{ color: '#fca5a5', fontWeight: 600 }}>{error}</div>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && !error && masteries.length === 0 && (
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          padding: '56px 24px', textAlign: 'center',
-          background: 'rgba(255,255,255,0.02)', borderRadius: 20,
-          border: '1px dashed rgba(255,255,255,0.07)',
-        }}>
-          <div style={{ fontSize: 56, marginBottom: 16 }}>🌱</div>
-          <div style={{ fontWeight: 700, color: '#f1f5f9', fontSize: 18, marginBottom: 8 }}>No mastery data yet</div>
-          <div style={{ color: '#64748b', fontSize: 14, maxWidth: 280, marginBottom: 24 }}>
-            Complete practice sessions to start tracking your retention & forgetting curves.
-          </div>
-          <Link href="/dashboard/practice" style={{
-            padding: '10px 24px', borderRadius: 10,
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-            color: '#fff', fontWeight: 700, textDecoration: 'none', fontSize: 15,
-            boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
-          }}>⚡ Start Practicing</Link>
-        </div>
-      )}
-
-      {/* Mastery list */}
-      {!loading && !error && sorted.length > 0 && (
+      {/* ── Concept Map Tab ── */}
+      {activeTab === 'map' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {sorted.map((m, i) => (
-            <MasteryCard key={m.conceptId} item={m} index={i} />
-          ))}
+          {sorted.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 0', color: '#64748b' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🌱</div>
+              <p style={{ fontSize: 16, fontWeight: 600 }}>No mastery data yet</p>
+              <p style={{ fontSize: 14, marginTop: 8 }}>
+                <Link href="/dashboard/practice" style={{ color: '#6366f1' }}>Start practising</Link> to build your mastery map
+              </p>
+            </div>
+          ) : sorted.map(m => {
+            const ret = Math.round((m.retentionScore ?? 0) * 100);
+            const retColor = ret >= 80 ? '#10b981' : ret >= 50 ? '#f59e0b' : '#ef4444';
+            const acc = m.totalAttempts > 0 ? Math.round((m.correctAttempts / m.totalAttempts) * 100) : 0;
+            const nextDue = m.nextRevisionDue ? new Date(m.nextRevisionDue) : null;
+            const hoursUntilDue = nextDue ? Math.round((nextDue.getTime() - Date.now()) / (1000 * 60 * 60)) : null;
+
+            return (
+              <div key={m.conceptId} style={{
+                padding: '16px 20px', borderRadius: 14,
+                background: m.isDue ? 'rgba(239,68,68,0.05)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${m.isDue ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)'}`,
+                display: 'grid',
+                gridTemplateColumns: '1fr auto auto auto auto',
+                gap: 20, alignItems: 'center',
+                transition: 'all 0.2s',
+              }}>
+                {/* Concept name + level */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 14 }}>{LEVEL_ICONS[m.masteryLevel] ?? '⚪'}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>{m.conceptName}</span>
+                    {m.isDue && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, color: '#ef4444',
+                        background: 'rgba(239,68,68,0.15)', padding: '1px 8px', borderRadius: 20,
+                      }}>DUE</span>
+                    )}
+                  </div>
+                  {/* Mastery progress bar */}
+                  <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden', width: 160 }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${m.masteryScore * 100}%`,
+                      background: `linear-gradient(90deg, ${LEVEL_COLORS[m.masteryLevel] ?? '#6366f1'}, ${LEVEL_COLORS[Math.min(m.masteryLevel + 1, 4)] ?? '#10b981'})`,
+                      borderRadius: 4, transition: 'width 0.6s',
+                    }} />
+                  </div>
+                </div>
+
+                {/* Retention sparkline + value */}
+                <div style={{ textAlign: 'center' }}>
+                  <RetentionSparkline
+                    retention={m.retentionScore ?? 0}
+                    stability={m.memoryStrength ?? 1}
+                  />
+                  <div style={{ fontSize: 12, fontWeight: 700, color: retColor, marginTop: 2 }}>{ret}%</div>
+                  <div style={{ fontSize: 10, color: '#475569' }}>retention</div>
+                </div>
+
+                {/* Accuracy */}
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#e2e8f0' }}>{acc}%</div>
+                  <div style={{ fontSize: 10, color: '#475569' }}>{m.correctAttempts}/{m.totalAttempts} correct</div>
+                </div>
+
+                {/* FSRS Difficulty */}
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#94a3b8' }}>
+                    D: {(m.fsrsDifficulty ?? 5).toFixed(1)}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#475569' }}>difficulty</div>
+                </div>
+
+                {/* Next due */}
+                <div style={{ textAlign: 'right', minWidth: 80 }}>
+                  {hoursUntilDue !== null ? (
+                    <>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: m.isDue ? '#ef4444' : '#64748b' }}>
+                        {m.isDue ? 'Overdue' : hoursUntilDue < 24 ? `${hoursUntilDue}h` : `${Math.round(hoursUntilDue / 24)}d`}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#475569' }}>until review</div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#475569' }}>Not reviewed</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Radar Chart Tab ── */}
+      {activeTab === 'radar' && (
+        <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div style={{
+            padding: 32, borderRadius: 20,
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <h3 style={{ color: '#e2e8f0', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Mastery Radar</h3>
+            <p style={{ color: '#64748b', fontSize: 12, marginBottom: 20 }}>Top {radarData.length} most-practised concepts</p>
+            {radarData.length < 3 ? (
+              <div style={{ textAlign: 'center', color: '#475569', padding: '40px 60px' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>🕸️</div>
+                Practice at least 3 concepts to see the radar
+              </div>
+            ) : (
+              <RadarChart data={radarData} size={300} />
+            )}
+            {/* Legend */}
+            <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {radarData.map(d => (
+                <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.color }} />
+                  <span style={{ color: '#64748b' }}>{d.label}</span>
+                  <span style={{ color: '#475569' }}>{Math.round(d.value * 100)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Mastery breakdown bar chart */}
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <h3 style={{ color: '#e2e8f0', fontSize: 16, fontWeight: 700, marginBottom: 20 }}>Mastery Distribution</h3>
+            {[4, 3, 2, 1, 0].map(level => {
+              const count = masteries.filter(m => m.masteryLevel === level).length;
+              const pct = masteries.length > 0 ? (count / masteries.length) * 100 : 0;
+              return (
+                <div key={level} style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, color: LEVEL_COLORS[level], fontWeight: 600 }}>
+                      {LEVEL_ICONS[level]} {LEVEL_LABELS[level]}
+                    </span>
+                    <span style={{ fontSize: 13, color: '#64748b' }}>{count}</span>
+                  </div>
+                  <div style={{ height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', width: `${pct}%`,
+                      background: LEVEL_COLORS[level],
+                      borderRadius: 4, transition: 'width 0.8s ease',
+                    }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Retention Decay Tab ── */}
+      {activeTab === 'insights' && (
+        <div>
+          <h3 style={{ color: '#e2e8f0', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Retention Decay Curves</h3>
+          <p style={{ color: '#64748b', fontSize: 13, marginBottom: 24 }}>
+            Each sparkline shows how fast a concept's memory fades (FSRS model). Shorter curves = harder concepts. Green = high retention, Red = critical.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+            {masteries
+              .filter(m => m.totalAttempts > 0)
+              .sort((a, b) => (a.retentionScore ?? 1) - (b.retentionScore ?? 1))
+              .map(m => {
+                const ret = Math.round((m.retentionScore ?? 0) * 100);
+                const retColor = ret >= 80 ? '#10b981' : ret >= 50 ? '#f59e0b' : '#ef4444';
+                return (
+                  <div key={m.conceptId} style={{
+                    padding: '14px 16px', borderRadius: 12,
+                    background: 'rgba(255,255,255,0.03)', border: `1px solid ${m.isDue ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)'}`,
+                    display: 'flex', alignItems: 'center', gap: 14,
+                  }}>
+                    <RetentionSparkline retention={m.retentionScore ?? 0} stability={m.memoryStrength ?? 1} width={90} height={32} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginBottom: 2 }}>{m.conceptName}</div>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                        <span style={{ color: retColor, fontWeight: 700 }}>{ret}% retention</span>
+                        <span style={{ color: '#475569' }}>S={m.memoryStrength.toFixed(1)}d</span>
+                        {m.isDue && <span style={{ color: '#ef4444', fontWeight: 700 }}>DUE ⚠️</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
         </div>
       )}
 
       <style>{`
-        @keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes pulseGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+          50% { box-shadow: 0 0 16px 4px rgba(239,68,68,0.25); }
+        }
       `}</style>
-    </div>
-  );
-}
-
-// ─── Mastery Card ─────────────────────────────────────────────────────────────
-
-function MasteryCard({ item, index }: { item: MasteryOverviewItem; index: number }) {
-  const [expanded, setExpanded] = useState(false);
-  const lc = LEVEL_COLORS[item.masteryLevel] ?? '#334155';
-  const rc = retentionColor(item.retentionScore);
-
-  return (
-    <div
-      onClick={() => setExpanded(e => !e)}
-      style={{
-        borderRadius: 14, padding: '14px 18px', cursor: 'pointer',
-        background: item.isDue ? 'rgba(239,68,68,0.04)' : 'rgba(255,255,255,0.03)',
-        border: `1px solid ${item.isDue ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.07)'}`,
-        transition: 'all 0.2s', animation: `fadeIn 0.3s ease ${index * 0.02}s both`,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        {/* Level icon */}
-        <div style={{
-          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 18, background: `${lc}22`, color: lc, border: `1px solid ${lc}44`,
-        }}>
-          {LEVEL_ICONS[item.masteryLevel] ?? '○'}
-        </div>
-
-        {/* Name + level */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontWeight: 600, color: '#e2e8f0', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {item.conceptName}
-            </span>
-            {item.isDue && (
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 5, background: 'rgba(239,68,68,0.15)', color: '#fca5a5', flexShrink: 0 }}>
-                DUE
-              </span>
-            )}
-          </div>
-          {/* Mastery progress bar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', borderRadius: 4, transition: 'width 0.6s ease',
-                width: `${item.masteryScore * 100}%`,
-                background: `linear-gradient(90deg, ${lc}, ${lc}88)`,
-              }} />
-            </div>
-            <span style={{ fontSize: 11, color: lc, fontWeight: 600, flexShrink: 0 }}>
-              {LEVEL_LABELS[item.masteryLevel]}
-            </span>
-          </div>
-        </div>
-
-        {/* Retention badge */}
-        <div style={{ textAlign: 'center', flexShrink: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: rc }}>
-            {Math.round(item.retentionScore * 100)}%
-          </div>
-          <div style={{ fontSize: 10, color: rc, opacity: 0.7 }}>{retentionLabel(item.retentionScore)}</div>
-        </div>
-
-        {/* Chevron */}
-        <div style={{ fontSize: 14, color: '#475569', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</div>
-      </div>
-
-      {/* Retention bar */}
-      <div style={{ marginTop: 10, height: 3, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{
-          height: '100%', borderRadius: 3, transition: 'width 0.6s ease',
-          width: `${item.retentionScore * 100}%`,
-          background: `linear-gradient(90deg, ${rc}, ${rc}88)`,
-        }} />
-      </div>
-
-      {/* Expanded detail */}
-      {expanded && (
-        <div style={{
-          marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)',
-          animation: 'fadeIn 0.2s ease',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10,
-        }}>
-          {[
-            { label: 'Total Attempts', value: item.totalAttempts },
-            { label: 'Correct', value: `${item.correctAttempts} (${item.totalAttempts > 0 ? Math.round((item.correctAttempts / item.totalAttempts) * 100) : 0}%)` },
-            { label: 'Revisions', value: item.revisionCount },
-            { label: 'Memory Strength', value: memoryStrengthLabel(item.memoryStrength) },
-            { label: 'Next Due', value: item.nextRevisionDue ? new Date(item.nextRevisionDue).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—' },
-            { label: 'Last Practiced', value: timeAgo(item.lastAttemptAt) },
-          ].map((d, i) => (
-            <div key={i} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '8px 12px' }}>
-              <div style={{ fontSize: 11, color: '#475569', marginBottom: 3 }}>{d.label}</div>
-              <div style={{ fontSize: 13, color: '#cbd5e1', fontWeight: 600 }}>{d.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

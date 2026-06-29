@@ -16,10 +16,10 @@ const REC_COLORS = {
 const REC_LABELS = { REVISE: 'Revise', LEARN_NEW: 'Learn New', PRACTICE: 'Practice' };
 
 const quickActions = [
-  { label: 'Start Learning', desc: 'Resume your personalized learning path', icon: '🗺️', href: '/dashboard/knowledge-graph', color: 'from-violet-600/20 to-indigo-600/20', border: 'border-violet-500/20' },
+  { label: 'Today\'s Plan', desc: "Your personalised daily study session", icon: '📅', href: '/dashboard/today', color: 'from-violet-600/20 to-indigo-600/20', border: 'border-violet-500/20' },
   { label: 'Practice Now', desc: 'Sharpen your skills with adaptive quizzes', icon: '⚡', href: '/dashboard/practice', color: 'from-yellow-600/20 to-orange-600/20', border: 'border-yellow-500/20' },
-  { label: 'Mastery Map', desc: 'See your retention & forgetting curves', icon: '🧠', href: '/dashboard/mastery', color: 'from-emerald-600/20 to-teal-600/20', border: 'border-emerald-500/20' },
-  { label: 'View History', desc: 'Review all past practice attempts', icon: '📋', href: '/dashboard/practice/history', color: 'from-blue-600/20 to-cyan-600/20', border: 'border-blue-500/20' },
+  { label: 'Mastery Map', desc: 'Radar chart · FSRS retention curves', icon: '🧠', href: '/dashboard/mastery', color: 'from-emerald-600/20 to-teal-600/20', border: 'border-emerald-500/20' },
+  { label: 'Knowledge Graph', desc: 'Explore prerequisites and learning paths', icon: '🗺️', href: '/dashboard/knowledge-graph', color: 'from-blue-600/20 to-cyan-600/20', border: 'border-blue-500/20' },
 ];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const [time, setTime] = useState(new Date());
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recs, setRecs] = useState<Recommendation[]>([]);
+  const [plan, setPlan] = useState<{ totalEstimatedMins: number; multiplier: number; streak: number; revisions: any[]; learnNew: any; practice: any } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [recsLoading, setRecsLoading] = useState(true);
   const [domain, setDomain] = useState<'DSA' | 'SYSTEM_DESIGN'>('DSA');
@@ -46,6 +47,10 @@ export default function DashboardPage() {
       .then(r => setStats(r.data))
       .catch(() => {})
       .finally(() => setStatsLoading(false));
+    // Fetch daily plan (for mini widget)
+    trackerApi.getDailyPlan('DSA')
+      .then(r => setPlan(r.data))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -147,6 +152,54 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Sprint 4: Today's Plan mini-widget */}
+      {plan && (plan.revisions.length > 0 || plan.learnNew || plan.practice) && (
+        <div style={{
+          marginBottom: 28, padding: '18px 22px', borderRadius: 18,
+          background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.06))',
+          border: '1px solid rgba(99,102,241,0.18)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ fontSize: 32 }}>📅</div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>Today&apos;s Study Plan is ready</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {plan.revisions.length > 0 && (
+                  <span style={{ fontSize: 12, color: '#fca5a5', background: 'rgba(239,68,68,0.1)', padding: '2px 10px', borderRadius: 20, fontWeight: 600 }}>
+                    🔔 {plan.revisions.length} review{plan.revisions.length > 1 ? 's' : ''} due
+                  </span>
+                )}
+                {plan.learnNew && (
+                  <span style={{ fontSize: 12, color: '#a5b4fc', background: 'rgba(99,102,241,0.1)', padding: '2px 10px', borderRadius: 20, fontWeight: 600 }}>
+                    ✨ 1 new concept
+                  </span>
+                )}
+                {plan.practice && (
+                  <span style={{ fontSize: 12, color: '#fcd34d', background: 'rgba(245,158,11,0.1)', padding: '2px 10px', borderRadius: 20, fontWeight: 600 }}>
+                    🎯 1 practice task
+                  </span>
+                )}
+                {plan.multiplier > 1.0 && (
+                  <span style={{ fontSize: 12, color: '#fb923c', background: 'rgba(249,115,22,0.1)', padding: '2px 10px', borderRadius: 20, fontWeight: 600 }}>
+                    🔥 ×{plan.multiplier.toFixed(1)} XP bonus
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <Link href="/dashboard/today" style={{ textDecoration: 'none' }}>
+            <button style={{
+              padding: '10px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff', fontWeight: 700, fontSize: 14,
+              boxShadow: '0 4px 16px rgba(99,102,241,0.35)',
+              whiteSpace: 'nowrap',
+            }}>View Plan ~{plan.totalEstimatedMins}min →</button>
+          </Link>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div style={{ marginBottom: 32 }}>

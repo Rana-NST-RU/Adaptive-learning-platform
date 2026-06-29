@@ -125,7 +125,7 @@ export class QuestionsService {
     userId: string | null,
     dto: SubmitAttemptDto,
   ): Promise<AttemptResultDto> {
-    const { questionId, answer, timeTakenMs, hintsUsed = 0, sessionId } = dto;
+    const { questionId, answer, timeTakenMs, hintsUsed = 0, sessionId, confidenceRating } = dto;
 
     // Fetch the question WITH the answer (server-side only)
     const question = await this.prisma.question.findUnique({
@@ -141,14 +141,29 @@ export class QuestionsService {
     const hintPenalty = hintsUsed * 0.1;
     const score = Math.max(0, baseScore - hintPenalty);
 
-    const xpEarned = isCorrect
+    // Streak XP multiplier (Sprint 4: 3d=1.2×, 7d=1.5×, 14d=1.75×, 30d=2.0×)
+    let xpMultiplier = 1.0;
+    let prevMasteryLevel: number | undefined;
+    let newMasteryLevel: number | undefined;
+    let attemptId = 'anonymous-' + Date.now();
+
+    const baseXP = isCorrect
       ? Math.round(QuestionsService.XP_MAP[question.difficulty] * (1 - hintPenalty))
       : 0;
 
-    let attemptId = 'anonymous-' + Date.now();
-
     // Only persist to DB if user is authenticated
     if (userId) {
+      // Fetch streak multiplier BEFORE saving attempt
+      xpMultiplier = await this.tracker.getStreakMultiplierForUser(userId);
+      const xpWithBonus = Math.round(baseXP * xpMultiplier);
+
+      // Capture prev mastery level for level-up detection
+      const prevMastery = await this.prisma.conceptMastery.findUnique({
+        where: { userId_conceptId: { userId, conceptId: question.conceptId } },
+        select: { masteryLevel: true },
+      });
+      prevMasteryLevel = prevMastery?.masteryLevel;
+
       const attempt = await this.prisma.questionAttempt.create({
         data: {
           questionId,
@@ -159,24 +174,45 @@ export class QuestionsService {
           hintsUsed,
           score,
           ...(sessionId && { sessionId }),
+          ...(confidenceRating && { confidenceRating }),
         },
       });
       attemptId = attempt.id;
 
-      // Update ConceptMastery (upsert)
+      // Update ConceptMastery (upsert) — returns new level
       await this.updateConceptMastery(userId, question, isCorrect, timeTakenMs);
 
-      // Sprint 4: Update Ebbinghaus retention + daily streak (fire-and-forget, non-blocking)
-      this.tracker.updateRetention(userId, question.conceptId, isCorrect).catch(() => {});
+      // Fetch updated mastery level for level-up detection
+      const afterMastery = await this.prisma.conceptMastery.findUnique({
+        where: { userId_conceptId: { userId, conceptId: question.conceptId } },
+        select: { masteryLevel: true },
+      });
+      newMasteryLevel = afterMastery?.masteryLevel;
+
+      // Sprint 4: FSRS retention + streak (fire-and-forget)
+      this.tracker.updateRetention(userId, question.conceptId, isCorrect, confidenceRating).catch(() => {});
       this.tracker.updateStreak(userId).catch(() => {});
 
-      // Award XP if correct
-      if (xpEarned > 0) {
+      // Award XP with streak multiplier
+      if (xpWithBonus > 0) {
         await this.prisma.userProfile.updateMany({
           where: { userId },
-          data: { totalXP: { increment: xpEarned } },
+          data: { totalXP: { increment: xpWithBonus } },
         });
       }
+
+      return {
+        attemptId,
+        isCorrect,
+        score,
+        correctAnswer: question.correctAnswer,
+        explanation: question.explanation,
+        xpEarned: xpWithBonus,
+        timeTakenMs,
+        xpMultiplier,
+        prevMasteryLevel,
+        newMasteryLevel,
+      };
     }
 
     return {
@@ -185,8 +221,9 @@ export class QuestionsService {
       score,
       correctAnswer: question.correctAnswer,
       explanation: question.explanation,
-      xpEarned,
+      xpEarned: baseXP,
       timeTakenMs,
+      xpMultiplier: 1.0,
     };
   }
 

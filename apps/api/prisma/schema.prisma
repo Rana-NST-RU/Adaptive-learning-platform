@@ -117,6 +117,7 @@ model ConceptMastery {
   nextRevisionDue    DateTime?
   revisionCount      Int       @default(0)
   memoryStrength     Float     @default(0.0)
+  fsrsDifficulty     Float     @default(5.0) // FSRS-4.5: personalised difficulty 1-10
   totalAttempts      Int       @default(0)
   correctAttempts    Int       @default(0)
   incorrectAttempts  Int       @default(0)
@@ -186,6 +187,7 @@ model QuestionAttempt {
   timeTakenMs Int
   hintsUsed   Int      @default(0)
   score       Float    @default(0.0)
+  confidenceRating Int?          // FSRS grade 1-4 (Again/Hard/Good/Easy)
   timestamp   DateTime @default(now())
   question    Question @relation(fields: [questionId], references: [id])
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)

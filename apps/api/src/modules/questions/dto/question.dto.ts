@@ -72,6 +72,18 @@ export class SubmitAttemptDto {
   @IsOptional()
   @IsString()
   sessionId?: string;
+
+  /**
+   * FSRS confidence grade 1-4:
+   * 1=Again (blackout), 2=Hard (wrong-familiar), 3=Good (correct-effort), 4=Easy (correct-confident)
+   * If omitted, derived from isCorrect: correct→3, wrong→1
+   */
+  @ApiPropertyOptional({ example: 3, minimum: 1, maximum: 4 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  confidenceRating?: number;
 }
 
 export class GetQuestionsDto {
@@ -166,4 +178,17 @@ export class AttemptResultDto {
 
   @ApiProperty()
   timeTakenMs: number;
+
+  /** Streak XP multiplier applied (1.0 = no bonus, 2.0 = 30-day streak) */
+  @ApiProperty({ example: 1.5 })
+  xpMultiplier: number;
+
+  /** Mastery level before this attempt (0–4) */
+  @ApiPropertyOptional({ example: 2 })
+  prevMasteryLevel?: number;
+
+  /** Mastery level after this attempt (0–4) — if different from prev, show level-up */
+  @ApiPropertyOptional({ example: 3 })
+  newMasteryLevel?: number;
 }
+
