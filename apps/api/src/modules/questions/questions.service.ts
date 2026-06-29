@@ -235,10 +235,47 @@ export class QuestionsService {
       return correct === given || correct === given.charAt(0);
     }
     if (question.questionType === 'TRUE_FALSE') {
-      return correct === given || correct === (given === 'true' ? 'true' : 'false');
+      return correct === given;
     }
-    // SHORT_ANSWER / CODE_SNIPPET — exact or contains
+    if (question.questionType === 'SHORT_ANSWER') {
+      // Fuzzy word-overlap (Jaccard ≥ 0.3 counts as correct)
+      return this.wordOverlapScore(correct, given) >= 0.3;
+    }
+    // CODE_SNIPPET — exact or contains (code needs to be more precise)
     return correct === given || correct.includes(given) || given.includes(correct);
+  }
+
+  /**
+   * Compute Jaccard similarity between two strings:
+   * |intersection(words_a, words_b)| / |union(words_a, words_b)|
+   * Returns 0.0–1.0. Used for SHORT_ANSWER fuzzy matching.
+   */
+  private wordOverlapScore(a: string, b: string): number {
+    const tokenize = (s: string) =>
+      new Set(
+        s.toLowerCase()
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter(Boolean),
+      );
+    const setA = tokenize(a);
+    const setB = tokenize(b);
+    const intersection = [...setA].filter((w) => setB.has(w)).length;
+    const union = new Set([...setA, ...setB]).size;
+    return union === 0 ? 0 : intersection / union;
+  }
+
+  /**
+   * Return a partial score (0.0–1.0) based on question type.
+   * Used alongside isCorrect for SHORT_ANSWER to give partial credit.
+   */
+  getAnswerScore(question: any, userAnswer: string): number {
+    const correct = question.correctAnswer.trim().toLowerCase();
+    const given = userAnswer.trim().toLowerCase();
+    if (question.questionType === 'SHORT_ANSWER') {
+      return Math.min(1.0, this.wordOverlapScore(correct, given) / 0.3);
+    }
+    return this.checkAnswer(question, userAnswer) ? 1.0 : 0.0;
   }
 
   private async updateConceptMastery(

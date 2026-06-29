@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { questionsApi, graphApi } from '@/lib/api-client';
 import type { Question, AttemptResult, QuestionDifficulty, MasteryData } from '@/lib/api-client';
 
@@ -63,8 +64,43 @@ export default function PracticePage() {
   const [tfAnswer, setTfAnswer] = useState<string | null>(null);
   const [shortAnswer, setShortAnswer] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sessionError, setSessionError] = useState<string | null>(null); // #3 inline error
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [wrongQuestions, setWrongQuestions] = useState<Question[]>([]); // #1 retry
+  const [xpAnim, setXpAnim] = useState<{ visible: boolean; xp: number }>({ visible: false, xp: 0 }); // #5 XP anim
   const startTimeRef = useRef<number>(Date.now());
+
+  // #3 — Restore session from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('alos_practice_session');
+      if (saved) {
+        const s = JSON.parse(saved);
+        if (s.questions?.length && s.phase === 'session') {
+          setQuestions(s.questions);
+          setCurrentIndex(s.currentIndex ?? 0);
+          setStats(s.stats ?? { total: 0, correct: 0, xpEarned: 0, avgTime: 0, results: [] });
+          setSelectedDiff(s.diff ?? 'MEDIUM');
+          if (s.concept) setSelectedConcept(s.concept);
+          setPhase('session');
+          startTimeRef.current = Date.now();
+        }
+      }
+    } catch {}
+  }, []);
+
+  // #3 — Save session to localStorage whenever key state changes
+  useEffect(() => {
+    if (phase === 'session' && questions.length > 0) {
+      try {
+        localStorage.setItem('alos_practice_session', JSON.stringify({
+          phase, questions, currentIndex, stats,
+          diff: selectedDiff, concept: selectedConcept,
+        }));
+      } catch {}
+    } else if (phase === 'summary' || phase === 'concept-picker') {
+      localStorage.removeItem('alos_practice_session');
+    }
+  }, [phase, currentIndex, stats, questions, selectedDiff, selectedConcept]);
 
   // Load concepts + mastery
   useEffect(() => {
@@ -166,6 +202,13 @@ export default function PracticePage() {
     try {
       const res = await questionsApi.submitAttempt({ questionId: q.id, answer, timeTakenMs, hintsUsed: hintsShown });
       setResult(res.data);
+      // #1 — track wrong answers for retry
+      if (!res.data.isCorrect) setWrongQuestions(prev => [...prev, q]);
+      // #5 — trigger XP animation
+      if (res.data.xpEarned > 0) {
+        setXpAnim({ visible: true, xp: res.data.xpEarned });
+        setTimeout(() => setXpAnim({ visible: false, xp: 0 }), 1800);
+      }
       setStats(prev => ({
         total: prev.total + 1,
         correct: prev.correct + (res.data.isCorrect ? 1 : 0),
@@ -191,6 +234,22 @@ export default function PracticePage() {
       startTimeRef.current = Date.now();
     }
   }, [currentIndex, questions.length]);
+
+  // #1 — Start retry session with wrong answers only
+  const startRetrySession = useCallback(() => {
+    if (wrongQuestions.length === 0) return;
+    setQuestions(wrongQuestions);
+    setWrongQuestions([]);
+    setCurrentIndex(0);
+    setResult(null);
+    setStats({ total: 0, correct: 0, xpEarned: 0, avgTime: 0, results: [] });
+    setHintsShown(0);
+    setSelectedOption(null);
+    setTfAnswer(null);
+    setShortAnswer('');
+    startTimeRef.current = Date.now();
+    setPhase('session');
+  }, [wrongQuestions]);
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -245,6 +304,7 @@ export default function PracticePage() {
           selectedOption={selectedOption}
           tfAnswer={tfAnswer}
           shortAnswer={shortAnswer}
+          xpAnim={xpAnim}
           onSelectOption={setSelectedOption}
           onSetTf={setTfAnswer}
           onSetShortAnswer={setShortAnswer}
@@ -258,8 +318,10 @@ export default function PracticePage() {
         <SummaryScreen
           stats={stats}
           concept={selectedConcept?.name ?? ''}
-          onRestart={() => { setSelectedConcept(null); setPhase('concept-picker'); }}
+          wrongCount={wrongQuestions.length}
+          onRestart={() => { setSelectedConcept(null); setWrongQuestions([]); setPhase('concept-picker'); }}
           onRepeat={startSession}
+          onRetryWrong={startRetrySession}
         />
       )}
     </div>
@@ -277,13 +339,24 @@ function ConceptPicker({
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 32, fontWeight: 700, color: '#f1f5f9', margin: 0 }}>
-          ⚡ Practice Session
-        </h1>
-        <p style={{ color: '#94a3b8', marginTop: 8, fontSize: 15 }}>
-          Choose a concept and difficulty, then let AI generate personalized questions for you.
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
+        <div>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#f1f5f9', margin: 0 }}>
+            ⚡ Practice Session
+          </h1>
+          <p style={{ color: '#94a3b8', marginTop: 8, fontSize: 15 }}>
+            Choose a concept and difficulty, then let AI generate personalized questions for you.
+          </p>
+        </div>
+        <Link href="/dashboard/practice/history" style={{
+          padding: '8px 16px', borderRadius: 10,
+          background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+          color: '#94a3b8', fontSize: 13, fontWeight: 600, textDecoration: 'none',
+          display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+          transition: 'all 0.2s',
+        }}>
+          📋 History
+        </Link>
       </div>
 
       {/* Domain + Difficulty + Count row */}
@@ -493,26 +566,149 @@ function LoadingScreen({ concept, message }: { concept: string; message: string 
   );
 }
 
+// ─── Syntax Highlighter ───────────────────────────────────────────────────────
+
+const KEYWORDS: Record<string, string[]> = {
+  python: ['def','class','return','if','elif','else','for','while','import','from','as','try','except','with','in','not','and','or','True','False','None','lambda','yield','pass','break','continue','raise','is','self','print'],
+  javascript: ['function','return','if','else','for','while','const','let','var','class','new','this','import','export','default','from','try','catch','throw','async','await','typeof','instanceof','true','false','null','undefined','of','in'],
+  typescript: ['function','return','if','else','for','while','const','let','var','class','new','this','import','export','default','from','try','catch','throw','async','await','typeof','instanceof','true','false','null','undefined','interface','type','enum','extends','implements','readonly','any','string','number','boolean','void'],
+  java: ['public','private','protected','static','void','int','String','class','new','return','if','else','for','while','try','catch','throws','import','package','boolean','null','true','false','this','super','final','abstract','extends','implements','interface'],
+  cpp: ['int','void','return','class','struct','if','else','for','while','include','namespace','using','new','delete','public','private','protected','bool','true','false','nullptr','const','auto','template','typename','virtual','override'],
+};
+
+function tokenizeLine(line: string, lang: string): { text: string; color: string }[] {
+  const keywords = new Set(KEYWORDS[lang] ?? KEYWORDS.javascript);
+  const tokens: { text: string; color: string }[] = [];
+  let i = 0;
+  // Comment detection
+  const commentStart = lang === 'python' ? '#' : '//';
+  const commentIdx = line.indexOf(commentStart);
+  const codePart = commentIdx >= 0 ? line.slice(0, commentIdx) : line;
+  const commentPart = commentIdx >= 0 ? line.slice(commentIdx) : '';
+
+  const wordRe = /[a-zA-Z_][a-zA-Z0-9_]*/g;
+  const numRe = /\b\d+(\.\d+)?\b/g;
+  const strRe = /(["'`])((?:\\.|[^\\])*?)\1/g;
+
+  // Build token list from code part
+  let last = 0;
+  const allMatches: { start: number; end: number; text: string; color: string }[] = [];
+
+  let m;
+  // Strings first (highest priority)
+  strRe.lastIndex = 0;
+  while ((m = strRe.exec(codePart))) {
+    allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0], color: '#86efac' });
+  }
+  // Numbers
+  numRe.lastIndex = 0;
+  while ((m = numRe.exec(codePart))) {
+    if (!allMatches.some(t => m!.index >= t.start && m!.index < t.end))
+      allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0], color: '#fdba74' });
+  }
+  // Keywords / identifiers
+  wordRe.lastIndex = 0;
+  while ((m = wordRe.exec(codePart))) {
+    if (!allMatches.some(t => m!.index >= t.start && m!.index < t.end))
+      allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0],
+        color: keywords.has(m[0]) ? '#c084fc' : '#e2e8f0' });
+  }
+  allMatches.sort((a, b) => a.start - b.start);
+
+  last = 0;
+  for (const t of allMatches) {
+    if (t.start > last) tokens.push({ text: codePart.slice(last, t.start), color: '#94a3b8' });
+    tokens.push({ text: t.text, color: t.color });
+    last = t.end;
+  }
+  if (last < codePart.length) tokens.push({ text: codePart.slice(last), color: '#94a3b8' });
+  if (commentPart) tokens.push({ text: commentPart, color: '#475569' });
+  return tokens;
+}
+
+function SyntaxHighlighter({ code, lang = 'python' }: { code: string; lang?: string }) {
+  const lines = code.split('\n');
+  return (
+    <div style={{ fontFamily: '"Fira Code","Cascadia Code","JetBrains Mono",Menlo,monospace', fontSize: 13, lineHeight: 1.7 }}>
+      {lines.map((line, i) => (
+        <div key={i} style={{ display: 'flex', minHeight: '1.7em' }}>
+          <span style={{ color: '#334155', userSelect: 'none', minWidth: 28, textAlign: 'right', paddingRight: 16, fontSize: 11, flexShrink: 0, lineHeight: 1.7 }}>
+            {i + 1}
+          </span>
+          <span>
+            {tokenizeLine(line, lang).map((t, j) => (
+              <span key={j} style={{ color: t.color }}>{t.text}</span>
+            ))}
+            {line === '' && <span> </span>}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Session View ─────────────────────────────────────────────────────────────
 
 function SessionView({
   question, questionIndex, totalQuestions, result, hintsShown,
-  selectedOption, tfAnswer, shortAnswer,
+  selectedOption, tfAnswer, shortAnswer, xpAnim,
   onSelectOption, onSetTf, onSetShortAnswer, onRevealHint, onSubmit, onNext,
 }: any) {
   const q: Question = question;
   const answered = result !== null;
   const progress = (questionIndex / totalQuestions) * 100;
 
+  // #2 — Keyboard shortcuts
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      // Don't fire shortcuts when typing in textarea/input
+      if ((e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT') return;
+      if (answered) {
+        if (e.key === 'Enter' || e.key === 'ArrowRight') onNext();
+        return;
+      }
+      if (q.questionType === 'MCQ' && q.options) {
+        const idx = parseInt(e.key, 10);
+        if (idx >= 1 && idx <= q.options.length) {
+          onSelectOption(q.options[idx - 1].charAt(0));
+        }
+        if (e.key === 'Enter' && selectedOption) onSubmit();
+      }
+      if (q.questionType === 'TRUE_FALSE') {
+        if (e.key === 't' || e.key === 'T') { onSetTf('true'); }
+        if (e.key === 'f' || e.key === 'F') { onSetTf('false'); }
+        if (e.key === 'Enter' && tfAnswer) onSubmit();
+      }
+      if (e.key === 'h' || e.key === 'H') onRevealHint();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [answered, q, selectedOption, tfAnswer, onSelectOption, onSetTf, onSubmit, onNext, onRevealHint]);
+
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto' }}>
+    <div style={{ maxWidth: 760, margin: '0 auto', position: 'relative' }}>
+      {/* #5 — XP Animation overlay */}
+      {xpAnim?.visible && (
+        <div style={{
+          position: 'fixed', top: '20%', right: '5%', zIndex: 1000,
+          fontSize: 28, fontWeight: 800, color: '#a5b4fc',
+          animation: 'xpFloat 1.8s ease forwards',
+          pointerEvents: 'none', textShadow: '0 0 20px rgba(99,102,241,0.8)',
+        }}>
+          +{xpAnim.xp} XP
+        </div>
+      )}
+
       {/* Progress */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
           <span style={{ color: '#94a3b8', fontSize: 13 }}>Question {questionIndex + 1} of {totalQuestions}</span>
-          <span style={{ color: '#94a3b8', fontSize: 13, background: 'rgba(255,255,255,0.05)', padding: '2px 10px', borderRadius: 20 }}>
-            {q.questionType.replace('_', ' ')} · <span style={{ color: DIFF_COLORS[q.difficulty] }}>{DIFF_LABELS[q.difficulty]}</span>
-          </span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ color: '#475569', fontSize: 11 }}>Press 1-4 · H=hint · Enter=next</span>
+            <span style={{ color: '#94a3b8', fontSize: 13, background: 'rgba(255,255,255,0.05)', padding: '2px 10px', borderRadius: 20 }}>
+              {q.questionType.replace('_', ' ')} · <span style={{ color: DIFF_COLORS[q.difficulty] }}>{DIFF_LABELS[q.difficulty]}</span>
+            </span>
+          </div>
         </div>
         <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, #6366f1, #8b5cf6)', borderRadius: 4, transition: 'width 0.4s' }} />
@@ -524,7 +720,7 @@ function SessionView({
         background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(20px)',
         border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: '32px', marginBottom: 20,
       }}>
-        {/* #1 — CODE_SNIPPET with syntax-highlighted pre block */}
+        {/* #4 — CODE_SNIPPET with real syntax highlighting */}
         {q.codeSnippet && (
           <div style={{ marginBottom: 24 }}>
             <div style={{
@@ -534,14 +730,12 @@ function SessionView({
               <span>{'</>'}</span>
               <span>{q.language ?? 'code'}</span>
             </div>
-            <pre style={{
+            <div style={{
               background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(99,102,241,0.2)',
-              borderRadius: 12, padding: 20, overflowX: 'auto', fontSize: 13,
-              color: '#e2e8f0', fontFamily: '"Fira Code", "Cascadia Code", "JetBrains Mono", Menlo, monospace',
-              lineHeight: 1.7, margin: 0, whiteSpace: 'pre',
+              borderRadius: 12, padding: '16px 20px', overflowX: 'auto',
             }}>
-              <code style={{ color: '#c4b5fd' }}>{q.codeSnippet}</code>
-            </pre>
+              <SyntaxHighlighter code={q.codeSnippet} lang={q.language ?? 'python'} />
+            </div>
           </div>
         )}
 
@@ -552,7 +746,7 @@ function SessionView({
         {/* MCQ Options */}
         {q.questionType === 'MCQ' && q.options && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {q.options.map((opt: string) => {
+            {q.options.map((opt: string, idx: number) => {
               const letter = opt.charAt(0);
               const isSelected = selectedOption === letter;
               const isCorrect = answered && result?.correctAnswer === letter;
@@ -567,6 +761,7 @@ function SessionView({
                     color: isCorrect ? '#10b981' : isWrong ? '#ef4444' : isSelected ? '#a5b4fc' : '#cbd5e1',
                     boxShadow: isCorrect ? '0 0 0 1px #10b98155' : isWrong ? '0 0 0 1px #ef444455' : isSelected ? '0 0 0 1px #6366f155' : '0 0 0 1px rgba(255,255,255,0.06)',
                   }}>
+                  <span style={{ color: '#475569', marginRight: 10, fontSize: 12 }}>{idx + 1}</span>
                   {opt}
                 </button>
               );
@@ -591,6 +786,7 @@ function SessionView({
                     boxShadow: isCorrect ? '0 0 0 2px #10b981' : isWrong ? '0 0 0 2px #ef4444' : isSelected ? '0 0 0 2px #6366f1' : '0 0 0 1px rgba(255,255,255,0.08)',
                   }}>
                   {val === 'true' ? '✅ True' : '❌ False'}
+                  <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>{val === 'true' ? 'Press T' : 'Press F'}</div>
                 </button>
               );
             })}
@@ -632,13 +828,13 @@ function SessionView({
               background: 'transparent', border: '1px solid rgba(245,158,11,0.3)',
               color: '#f59e0b', padding: '8px 18px', borderRadius: 20, cursor: 'pointer', fontSize: 13,
             }}>
-              💡 Reveal hint ({hintsShown + 1}/{q.hints.length}) · −10% score
+              💡 Reveal hint ({hintsShown + 1}/{q.hints.length}) · −10% score  <kbd style={{ fontSize: 10, opacity: 0.6, marginLeft: 6, background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 4 }}>H</kbd>
             </button>
           )}
         </div>
       )}
 
-      {/* #2 — Feedback panel with score display */}
+      {/* Feedback panel with score display */}
       {answered && (
         <div style={{
           background: result!.isCorrect ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
@@ -660,7 +856,6 @@ function SessionView({
                 )}
               </div>
             </div>
-            {/* #2 — Score + XP badges */}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{
                 background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
@@ -697,7 +892,7 @@ function SessionView({
               color: (selectedOption || tfAnswer || shortAnswer) ? '#fff' : '#475569',
               fontWeight: 700, fontSize: 16, transition: 'all 0.2s',
             }}>
-            Submit Answer
+            Submit Answer  <kbd style={{ fontSize: 12, opacity: 0.6, marginLeft: 6, background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 4 }}>↵</kbd>
           </button>
         )}
         {answered && (
@@ -708,18 +903,22 @@ function SessionView({
             boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
           }}>
             {questionIndex + 1 >= totalQuestions ? 'View Summary 🏆' : 'Next Question →'}
+            <kbd style={{ fontSize: 12, opacity: 0.6, marginLeft: 8, background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 4 }}>→</kbd>
           </button>
         )}
       </div>
 
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes xpFloat { 0% { opacity: 0; transform: translateY(0) scale(0.8); } 20% { opacity: 1; transform: translateY(-10px) scale(1.1); } 80% { opacity: 1; transform: translateY(-40px) scale(1); } 100% { opacity: 0; transform: translateY(-70px) scale(0.9); } }
+      `}</style>
     </div>
   );
 }
 
 // ─── Summary Screen ───────────────────────────────────────────────────────────
 
-function SummaryScreen({ stats, concept, onRestart, onRepeat }: any) {
+function SummaryScreen({ stats, concept, wrongCount, onRestart, onRepeat, onRetryWrong }: any) {
   const accuracy = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
   const grade = accuracy >= 90 ? 'S' : accuracy >= 75 ? 'A' : accuracy >= 60 ? 'B' : accuracy >= 40 ? 'C' : 'D';
   const gradeColor = ({ S: '#f59e0b', A: '#10b981', B: '#6366f1', C: '#f97316', D: '#ef4444' } as any)[grade];
@@ -743,7 +942,6 @@ function SummaryScreen({ stats, concept, onRestart, onRepeat }: any) {
           { label: 'Accuracy', value: `${accuracy}%`, color: '#f1f5f9', big: true },
           { label: 'Correct', value: `${stats.correct} / ${stats.total}`, color: '#10b981' },
           { label: 'XP Earned', value: `+${stats.xpEarned}`, color: '#a5b4fc' },
-          // #2 — avg score in summary
           { label: 'Avg Score', value: `${avgScore}%`, color: '#f59e0b' },
           { label: 'Avg Time', value: `${(stats.avgTime / 1000).toFixed(1)}s`, color: '#94a3b8' },
         ].map((s, i) => (
@@ -757,16 +955,35 @@ function SummaryScreen({ stats, concept, onRestart, onRepeat }: any) {
         ))}
       </div>
 
+      {/* #1 — Retry wrong answers callout */}
+      {wrongCount > 0 && (
+        <div style={{
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+          borderRadius: 14, padding: '16px 20px', marginBottom: 20, textAlign: 'left',
+        }}>
+          <div style={{ fontWeight: 700, color: '#fca5a5', marginBottom: 4 }}>❌ {wrongCount} incorrect answer{wrongCount > 1 ? 's' : ''}</div>
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>Want to drill just the ones you missed?</div>
+        </div>
+      )}
+
       {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {wrongCount > 0 && (
+          <button onClick={onRetryWrong} style={{
+            flex: 1, minWidth: 140, padding: '14px', borderRadius: 12,
+            border: '1px solid rgba(239,68,68,0.4)',
+            background: 'rgba(239,68,68,0.1)', color: '#fca5a5',
+            fontWeight: 700, fontSize: 14, cursor: 'pointer',
+          }}>🔄 Retry {wrongCount} Mistake{wrongCount > 1 ? 's' : ''}</button>
+        )}
         <button onClick={onRepeat} style={{
-          flex: 1, padding: '14px', borderRadius: 12, border: '1px solid rgba(99,102,241,0.3)',
-          background: 'transparent', color: '#a5b4fc', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+          flex: 1, minWidth: 140, padding: '14px', borderRadius: 12, border: '1px solid rgba(99,102,241,0.3)',
+          background: 'transparent', color: '#a5b4fc', fontWeight: 700, fontSize: 14, cursor: 'pointer',
         }}>🔁 Repeat Session</button>
         <button onClick={onRestart} style={{
-          flex: 1, padding: '14px', borderRadius: 12, border: 'none',
+          flex: 1, minWidth: 140, padding: '14px', borderRadius: 12, border: 'none',
           background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-          color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+          color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
           boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
         }}>✨ New Concept</button>
       </div>

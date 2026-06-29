@@ -21,6 +21,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { QuestionsService } from './questions.service';
 import {
   GenerateQuestionsDto,
@@ -50,14 +51,18 @@ export class QuestionsController {
   }
 
   // ─── POST /questions/generate ─────────────────────────────────────────────
+  // Rate-limited: 5 LLM calls per 60s per IP to protect Groq quota
 
   @Post('generate')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Generate questions via LLM for a concept (public)',
-    description: 'Calls Groq (llama-3.3-70b-versatile) and saves to PostgreSQL. No auth required.',
+    description: 'Calls Groq (llama-3.3-70b-versatile). Rate-limited: 5 req/60s per IP.',
   })
   @ApiResponse({ status: 201, type: [QuestionResponseDto] })
+  @ApiResponse({ status: 429, description: 'Too many requests — wait 60 seconds.' })
   generateQuestions(
     @Body() dto: GenerateQuestionsDto,
   ): Promise<QuestionResponseDto[]> {
