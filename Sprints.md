@@ -4,7 +4,7 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## 🎯 Sprint 1: Foundation & Authentication (Current/Completed)
+## ✅ Sprint 1: Foundation & Authentication — COMPLETE
 **Goal:** Establish the monorepo architecture, database schemas, and a secure, robust authentication system.
 
 - **Infrastructure:** 
@@ -21,7 +21,7 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## 🧠 Sprint 2: Knowledge Graph (Neo4j) Integration
+## ✅ Sprint 2: Knowledge Graph (Neo4j) Integration — COMPLETE
 **Goal:** Implement the core structural intelligence of the platform by mapping concepts, prerequisites, and relationships using a graph database.
 
 - **Infrastructure:**
@@ -37,7 +37,7 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## 🤖 Sprint 3: LLM Question Generation & Assessment Engine
+## ✅ Sprint 3: LLM Question Generation & Assessment Engine — COMPLETE
 **Goal:** Build the engine that serves educational content, tracks user answers, and utilizes AI to generate dynamic questions.
 
 - **Backend:**
@@ -51,8 +51,10 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## 📈 Sprint 4: Adaptive Engine & Mastery Tracking
+## ✅ Sprint 4: Adaptive Engine & Mastery Tracking — COMPLETE
 **Goal:** Make the platform truly *adaptive* by implementing spaced repetition, forgetting curves, and dynamic recommendations.
+
+> **Delivered:** FSRS-4.5 algorithm, confidence ratings (1–4 grade), Smart Review Session (`?mode=review`), Optimal Learning Window badge, radar chart mastery visualization, retention sparklines, XP streak multiplier (up to 2×), achievement system (10 types), level-up animations, weekly digest, fading-soon alerts.
 
 - **Backend:**
   - `ConceptMastery` and `LearningStreak` schemas.
@@ -65,8 +67,10 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## 📊 Sprint 5: Student Dashboard & Gamification
+## ✅ Sprint 5: Student Dashboard & Gamification — COMPLETE
 **Goal:** Polish the core user loop, adding gamification elements to maximize retention and engagement.
+
+> **Delivered:** Global leaderboard with animated podium (top 50 by XP), Profile settings page (bio, institution, timezone, daily goal), Streak Freeze widget (manual use + auto-consume on missed days), `LearningEvent` analytics event sourcing on every attempt, due-concepts count on dashboard stats, passive streak break detection on every dashboard load.
 
 - **Backend:**
   - Enhance `LearningEvent` event sourcing to track detailed analytics (Time spent per concept, hints used).
@@ -76,6 +80,17 @@ This document outlines the end-to-end development process for the Adaptive Learn
   - Activity heatmaps (similar to GitHub contributions).
   - "Streak freezes" and level-up animations using Framer Motion.
   - User profile settings (updating bio, target exams, timezone).
+
+---
+
+## 🔧 Pre-Sprint 6 Hardening — COMPLETE
+> Gap fixes completed before starting the Admin Portal sprint:
+> - **Streak break detection:** `checkAndBreakStreak()` fires passively on every `/tracker/stats` call — no cron needed
+> - **Due concepts banner:** Dashboard shows `🔔 N concepts due → Start Review Session` linked to `?mode=review`
+> - **KG → Practice deep link:** Knowledge Graph "Practice This Concept" button navigates to `/practice?concept=ID`
+> - **LearningEvent analytics:** Every `submitAttempt` now creates a `LearningEvent` record with `timeTakenMs`, `hintsUsed`, `xpEarned`, `difficulty`
+> - **Sidebar:** All 8 pages (including Leaderboard + Profile) in sidebar with active-state highlighting
+> - **Sprints.md:** This file updated to reflect reality
 
 ---
 

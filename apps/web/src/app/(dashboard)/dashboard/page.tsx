@@ -412,6 +412,38 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Due Concepts Review Banner */}
+      {(stats?.dueConceptCount ?? 0) > 0 && (
+        <div style={{
+          marginBottom: 24, padding: '14px 20px', borderRadius: 14,
+          background: 'linear-gradient(135deg, rgba(245,158,11,0.08), rgba(239,68,68,0.06))',
+          border: '1px solid rgba(245,158,11,0.25)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+            }}>🔔</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#fcd34d' }}>
+                {stats!.dueConceptCount} concept{stats!.dueConceptCount !== 1 ? 's' : ''} due for review
+              </div>
+              <div style={{ fontSize: 12, color: '#78716c', marginTop: 2 }}>
+                Your FSRS schedule says now is the perfect time — don&apos;t let them slip!
+              </div>
+            </div>
+          </div>
+          <Link href="/dashboard/practice?mode=review" style={{
+            padding: '9px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+            color: '#fff', fontWeight: 700, fontSize: 13, textDecoration: 'none',
+            boxShadow: '0 4px 16px rgba(245,158,11,0.3)', whiteSpace: 'nowrap',
+          }}>⚡ Start Review Session →</Link>
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 16, fontWeight: 600, color: '#f1f5f9', marginBottom: 14 }}>Quick Actions</h2>

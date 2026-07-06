@@ -222,6 +222,28 @@ export class QuestionsService {
         // ignore
       }
 
+      // ── LearningEvent analytics record ─────────────────────────────────────
+      // Fire-and-forget: records time-spent, hints, XP per concept for insights
+      this.prisma.learningEvent.create({
+        data: {
+          userId,
+          eventType: 'QUESTION_ATTEMPTED',
+          conceptId: question.conceptId,
+          conceptName: question.conceptName,
+          domain: question.domain,
+          ...(sessionId && { sessionId }),
+          payload: {
+            isCorrect,
+            timeTakenMs: timeTakenMs ?? null,
+            hintsUsed,
+            xpEarned: Math.round(baseXP * xpMultiplier),
+            confidenceRating: confidenceRating ?? null,
+            difficulty: question.difficulty,
+            score,
+          },
+        },
+      }).catch((err) => this.logger.warn(`[LearningEvent] failed to create: ${err}`));
+
       // Award XP with streak multiplier
       if (xpWithBonus > 0) {
         await this.prisma.userProfile.updateMany({

@@ -346,7 +346,9 @@ export interface DashboardStats {
   };
   accuracy: number | null;
   totalAttempts: number;
+  dueConceptCount: number;
 }
+
 
 export interface Recommendation {
   conceptId: string;

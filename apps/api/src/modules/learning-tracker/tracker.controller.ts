@@ -45,8 +45,14 @@ export class TrackerController {
 
   @Get('stats')
   @ApiOperation({ summary: 'Live dashboard stats — XP, streak (+ multiplier), mastery counts, accuracy' })
-  getDashboardStats(@Request() req: any) {
-    return this.tracker.getDashboardStats(req.user.id);
+  async getDashboardStats(@Request() req: any) {
+    // Passively detect and apply streak breaks on every dashboard load
+    this.tracker.checkAndBreakStreak(req.user.id).catch(() => {});
+    const [stats, dueCount] = await Promise.all([
+      this.tracker.getDashboardStats(req.user.id),
+      this.tracker.getDueConceptCount(req.user.id),
+    ]);
+    return { ...stats, dueConceptCount: dueCount };
   }
 
   // ─── GET /tracker/streak ─────────────────────────────────────────────────

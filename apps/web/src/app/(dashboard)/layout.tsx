@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/api-client';
 
@@ -14,6 +14,7 @@ interface User {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -54,11 +55,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navItems = [
     { href: '/dashboard', label: 'Overview', icon: '🏠' },
-    { href: '/dashboard/learning-path', label: 'Learning Path', icon: '🗺️' },
+    { href: '/dashboard/today', label: "Today's Plan", icon: '📅' },
     { href: '/dashboard/practice', label: 'Practice', icon: '⚡' },
-    { href: '/dashboard/knowledge-graph', label: 'Knowledge Graph', icon: '🧠' },
-    { href: '/dashboard/analytics', label: 'Analytics', icon: '📊' },
-    { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
+    { href: '/dashboard/mastery', label: 'Mastery Map', icon: '🧬' },
+    { href: '/dashboard/knowledge-graph', label: 'Knowledge Graph', icon: '🗺️' },
+    { href: '/dashboard/achievements', label: 'Achievements', icon: '🏅' },
+    { href: '/dashboard/leaderboard', label: 'Leaderboard', icon: '🥇' },
+    { href: '/dashboard/profile', label: 'Profile', icon: '👤' },
   ];
 
   return (
@@ -101,18 +104,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Nav */}
         <nav className="p-3 space-y-1 flex-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all group"
-            >
-              <span className="text-base flex-shrink-0">{item.icon}</span>
-              {sidebarOpen && (
-                <span className="text-sm font-medium">{item.label}</span>
-              )}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isActive = item.href === '/dashboard'
+              ? pathname === '/dashboard'
+              : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group"
+                style={{
+                  color: isActive ? '#a5b4fc' : '#64748b',
+                  background: isActive ? 'rgba(99,102,241,0.12)' : 'transparent',
+                  borderLeft: isActive ? '2px solid #6366f1' : '2px solid transparent',
+                  fontWeight: isActive ? 700 : 400,
+                }}
+              >
+                <span className="text-base flex-shrink-0">{item.icon}</span>
+                {sidebarOpen && (
+                  <span className="text-sm">{item.label}</span>
+                )}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* User section */}

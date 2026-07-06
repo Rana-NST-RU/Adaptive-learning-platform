@@ -1025,5 +1025,58 @@ export class TrackerService {
       `[SeedAssessment] userId=${userId} conceptId=${conceptId} rating=${rating} → S=${s.toFixed(2)} D=${d.toFixed(2)}`,
     );
   }
+
+  // ─── Passive Streak Break Detection ──────────────────────────────────────
+  /**
+   * Called whenever /tracker/stats is fetched (i.e. dashboard load).
+   * If lastActiveDate is ≥2 days ago and no freeze is available, resets streak.
+   * This avoids needing a cron job — streak breaks are detected on next login.
+   */
+  async checkAndBreakStreak(userId: string): Promise<void> {
+    try {
+      const streak = await this.prisma.learningStreak.findUnique({ where: { userId } });
+      if (!streak || !streak.lastActiveDate) return;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const lastActive = new Date(streak.lastActiveDate);
+      lastActive.setHours(0, 0, 0, 0);
+
+      const diffDays = Math.round((today.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (diffDays < 2) return; // streak still valid (today or yesterday)
+
+      if (streak.streakFreezes > 0) {
+        // Auto-consume a freeze to protect the streak
+        await this.prisma.learningStreak.update({
+          where: { userId },
+          data: { streakFreezes: { decrement: 1 }, lastActiveDate: today },
+        });
+        this.logger.log(`[Streak] Auto-consumed freeze for user=${userId} (missed ${diffDays - 1}d)`);
+      } else {
+        // Break the streak
+        await this.prisma.learningStreak.update({
+          where: { userId },
+          data: { currentStreak: 0 },
+        });
+        this.logger.log(`[Streak] Streak broken for user=${userId} (missed ${diffDays - 1}d, no freezes)`);
+      }
+    } catch (err) {
+      this.logger.warn(`[Streak] checkAndBreakStreak failed: ${err}`);
+    }
+  }
+
+  // ─── Due Concept Count (for dashboard banner) ─────────────────────────────
+  async getDueConceptCount(userId: string, domain?: 'DSA' | 'SYSTEM_DESIGN'): Promise<number> {
+    const now = new Date();
+    return this.prisma.conceptMastery.count({
+      where: {
+        userId,
+        nextRevisionDue: { lte: now },
+        ...(domain && { domain: domain as Domain }),
+      },
+    });
+  }
 }
+
 

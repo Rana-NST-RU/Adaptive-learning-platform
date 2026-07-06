@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { graphApi, ConceptNode, ConceptEdge, ConceptDetail } from '@/lib/api-client';
@@ -656,20 +657,22 @@ export default function KnowledgeGraphPage() {
               )}
             </div>
 
-            {/* Start Learning CTA */}
+            {/* Practice CTA */}
             <div
               className="p-5 flex-shrink-0"
               style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
             >
-              <button
+              <Link
                 id="kg-start-learning"
-                className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02] active:scale-100"
+                href={`/dashboard/practice?concept=${selectedNode.id}`}
+                className="block w-full py-3 rounded-xl text-sm font-semibold text-white text-center transition-all hover:scale-[1.02] active:scale-100"
                 style={{
                   background: `linear-gradient(135deg, ${getNodeColor(selectedNode)}, ${getNodeColor(selectedNode)}cc)`,
+                  textDecoration: 'none',
                 }}
               >
-                Start Learning →
-              </button>
+                ⚡ Practice This Concept →
+              </Link>
             </div>
           </motion.div>
         )}
