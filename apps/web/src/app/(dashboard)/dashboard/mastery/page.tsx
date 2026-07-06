@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { trackerApi } from '@/lib/api-client';
-import type { MasteryOverviewItem } from '@/lib/api-client';
+import type { MasteryOverviewItem, ForecastDay } from '@/lib/api-client';
 
 // ─── Radar Chart (pure SVG, no dependencies) ─────────────────────────────────
 
@@ -136,20 +136,23 @@ const LEVEL_ICONS = ['⚪', '🔵', '🟣', '🟡', '🌟'];
 export default function MasteryPage() {
   const [domain, setDomain] = useState<'DSA' | 'SYSTEM_DESIGN'>('DSA');
   const [masteries, setMasteries] = useState<MasteryOverviewItem[]>([]);
+  const [forecast, setForecast] = useState<ForecastDay[]>([]);
   const [dueCount, setDueCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<'level' | 'retention' | 'due'>('level');
-  const [activeTab, setActiveTab] = useState<'map' | 'radar' | 'insights'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'radar' | 'insights' | 'forecast' | 'share'>('map');
 
   useEffect(() => {
     setLoading(true);
     Promise.all([
       trackerApi.getMasteryOverview(domain),
       trackerApi.getDueConcepts(domain),
+      trackerApi.getForecast(),
     ])
-      .then(([mastRes, dueRes]) => {
+      .then(([mastRes, dueRes, forecastRes]) => {
         setMasteries(mastRes.data);
         setDueCount(dueRes.data.length);
+        setForecast(forecastRes.data);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -274,6 +277,8 @@ export default function MasteryPage() {
           { key: 'map', label: '📋 Concept Map' },
           { key: 'radar', label: '🕸️ Radar Chart' },
           { key: 'insights', label: '📊 Retention Decay' },
+          { key: 'forecast', label: '📈 30-Day Forecast' },
+          { key: 'share', label: '🔗 Share' },
         ] as const).map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
             padding: '8px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
@@ -488,6 +493,16 @@ export default function MasteryPage() {
         </div>
       )}
 
+      {/* ── 30-Day Forecast Tab ── */}
+      {activeTab === 'forecast' && (
+        <ForecastChart data={forecast} />
+      )}
+
+      {/* ── Shareable Card Tab ── */}
+      {activeTab === 'share' && (
+        <ShareCard masteries={masteries} domain={domain} />
+      )}
+
       <style>{`
         @keyframes pulseGlow {
           0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
@@ -497,3 +512,194 @@ export default function MasteryPage() {
     </div>
   );
 }
+
+// ─── 30-Day Forecast Chart ────────────────────────────────────────────────────
+
+function ForecastChart({ data }: { data: ForecastDay[] }) {
+  if (!data.length) return (
+    <div style={{ textAlign: 'center', padding: '60px 0', color: '#64748b' }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>📅</div>
+      <p>No review data yet. Start practising to see your forecast.</p>
+    </div>
+  );
+
+  const max = Math.max(...data.map(d => d.dueCount), 1);
+  const today = new Date().toISOString().split('T')[0];
+  const totalDue = data.reduce((s, d) => s + d.dueCount, 0);
+
+  const getBarColor = (date: string, count: number) => {
+    if (count === 0) return 'rgba(255,255,255,0.04)';
+    const daysAhead = Math.round((new Date(date).getTime() - Date.now()) / 86400000);
+    if (daysAhead <= 1) return '#ef4444';
+    if (daysAhead <= 7) return '#f59e0b';
+    return '#6366f1';
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <h3 style={{ color: '#e2e8f0', fontSize: 16, fontWeight: 700, marginBottom: 4 }}>30-Day Review Forecast</h3>
+          <p style={{ color: '#64748b', fontSize: 13 }}>
+            {totalDue} total reviews scheduled · powered by FSRS scheduling
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
+          {[['#ef4444', 'Today/Tomorrow'], ['#f59e0b', 'This Week'], ['#6366f1', 'Later']].map(([color, label]) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: color as string }} />
+              <span style={{ color: '#64748b' }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 180, overflow: 'hidden' }}>
+        {data.map((day, i) => {
+          const barH = day.dueCount > 0 ? Math.max((day.dueCount / max) * 160, 6) : 0;
+          const isToday = day.date === today;
+          const color = getBarColor(day.date, day.dueCount);
+          const date = new Date(day.date + 'T12:00:00');
+          const label = i % 5 === 0 ? date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+          return (
+            <div key={day.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%', justifyContent: 'flex-end' }} title={`${day.date}: ${day.dueCount} review${day.dueCount !== 1 ? 's' : ''} due`}>
+              {day.dueCount > 0 && i % 3 === 0 && (
+                <span style={{ fontSize: 9, color: '#64748b' }}>{day.dueCount}</span>
+              )}
+              <div style={{
+                width: '100%', borderRadius: '2px 2px 0 0',
+                height: barH > 0 ? `${barH}px` : '2px',
+                background: color,
+                boxShadow: isToday ? `0 0 8px ${color}` : 'none',
+                border: isToday ? `1px solid ${color}` : 'none',
+                transition: 'height 0.6s ease',
+              }} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* X-axis labels */}
+      <div style={{ display: 'flex', gap: 3, marginTop: 6 }}>
+        {data.map((day, i) => {
+          const date = new Date(day.date + 'T12:00:00');
+          const label = i === 0 ? 'Today' : i % 5 === 0 ? date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+          return <div key={day.date} style={{ flex: 1, fontSize: 9, color: i === 0 ? '#a5b4fc' : '#475569', textAlign: 'center', overflow: 'hidden' }}>{label}</div>;
+        })}
+      </div>
+
+      {/* Insight summary */}
+      <div style={{ marginTop: 24, padding: '16px 20px', borderRadius: 14, background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)' }}>
+        <h4 style={{ color: '#a5b4fc', fontSize: 13, fontWeight: 700, marginBottom: 8 }}>📊 Forecast Insights</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, fontSize: 13 }}>
+          <div><div style={{ color: '#ef4444', fontWeight: 700, fontSize: 20 }}>{data.slice(0, 2).reduce((s, d) => s + d.dueCount, 0)}</div><div style={{ color: '#64748b' }}>Due today/tomorrow</div></div>
+          <div><div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 20 }}>{data.slice(0, 7).reduce((s, d) => s + d.dueCount, 0)}</div><div style={{ color: '#64748b' }}>Due this week</div></div>
+          <div><div style={{ color: '#6366f1', fontWeight: 700, fontSize: 20 }}>{Math.round(totalDue / 30)}</div><div style={{ color: '#64748b' }}>Avg reviews/day</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Shareable Mastery Card ───────────────────────────────────────────────────
+
+function ShareCard({ masteries, domain }: { masteries: MasteryOverviewItem[]; domain: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const top3 = masteries
+    .filter(m => m.masteryLevel >= 2)
+    .sort((a, b) => b.masteryLevel - a.masteryLevel)
+    .slice(0, 3);
+
+  const expertCount = masteries.filter(m => m.masteryLevel >= 4).length;
+  const avgRetention = masteries.length
+    ? Math.round(masteries.reduce((s, m) => s + (m.retentionScore ?? 0), 0) / masteries.length * 100)
+    : 0;
+
+  const shareText = `My ALOS Mastery Progress 🚀\n\nDomain: ${domain.replace('_', ' ')}\n${expertCount > 0 ? `Expert in: ${top3.map(m => m.conceptName).join(', ')}\n` : ''}Average Retention: ${avgRetention}%\n\nBuilt with ALOS — Adaptive Learning OS`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(shareText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div>
+      <h3 style={{ color: '#e2e8f0', fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Share Your Progress</h3>
+      <p style={{ color: '#64748b', fontSize: 13, marginBottom: 24 }}>Screenshot or copy your mastery card to share on LinkedIn, Twitter, or with your study group.</p>
+
+      {/* Card preview */}
+      <div id="mastery-share-card" style={{
+        maxWidth: 440, padding: '28px 32px', borderRadius: 20,
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+        border: '1px solid rgba(99,102,241,0.3)',
+        boxShadow: '0 0 40px rgba(99,102,241,0.2)',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        {/* Background glow */}
+        <div style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(99,102,241,0.1)', filter: 'blur(40px)', pointerEvents: 'none' }} />
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🧠</div>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 900, color: '#f1f5f9' }}>ALOS</div>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Adaptive Learning OS</div>
+          </div>
+          <div style={{ marginLeft: 'auto', fontSize: 10, color: '#6366f1', fontWeight: 700, background: 'rgba(99,102,241,0.1)', padding: '3px 8px', borderRadius: 6 }}>{domain.replace('_', ' ')}</div>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 22 }}>
+          {[
+            { value: masteries.length, label: 'Concepts' },
+            { value: expertCount, label: 'Expert Level' },
+            { value: `${avgRetention}%`, label: 'Avg Retention' },
+          ].map(({ value, label }) => (
+            <div key={label} style={{ textAlign: 'center', padding: '12px 8px', borderRadius: 12, background: 'rgba(255,255,255,0.05)' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#f1f5f9' }}>{value}</div>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, marginTop: 3 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Top concepts */}
+        {top3.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Top Mastered</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {top3.map((m, i) => (
+                <div key={m.conceptId} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, background: ['linear-gradient(135deg,#f59e0b,#ef4444)', 'linear-gradient(135deg,#6366f1,#8b5cf6)', 'linear-gradient(135deg,#10b981,#14b8a6)'][i], fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{['🥇', '🥈', '🥉'][i]}</div>
+                  <span style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600, flex: 1 }}>{m.conceptName}</span>
+                  <span style={{ fontSize: 11, color: ['#f59e0b', '#8b5cf6', '#10b981'][Math.min(m.masteryLevel - 1, 2)], fontWeight: 700 }}>{['', 'Beginner', 'Intermediate', 'Advanced', 'Expert'][m.masteryLevel]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 10, color: '#475569' }}>alos.app</span>
+          <span style={{ fontSize: 10, color: '#475569' }}>Powered by FSRS-4.5 · {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+        <button onClick={handleCopy} style={{
+          padding: '11px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+          background: copied ? '#10b981' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+          color: '#fff', fontWeight: 700, fontSize: 14, transition: 'all 0.3s',
+        }}>
+          {copied ? '✓ Copied!' : '📋 Copy Text'}
+        </button>
+        <p style={{ color: '#475569', fontSize: 12, alignSelf: 'center' }}>Screenshot the card above to share as an image</p>
+      </div>
+    </div>
+  );
+}
+

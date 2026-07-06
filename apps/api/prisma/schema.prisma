@@ -29,6 +29,7 @@ model User {
   recommendations  Recommendation[]
   refreshTokens    RefreshToken[]
   profile          UserProfile?
+  achievements     UserAchievement[]
 
   @@map("users")
 }
@@ -215,6 +216,19 @@ model Recommendation {
   @@index([userId, priority])
   @@index([userId, isActedOn])
   @@map("recommendations")
+}
+
+model UserAchievement {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String   // e.g. 'FIRST_ANSWER', 'STREAK_7', 'EXPERT_CONCEPT'
+  metadata   Json?    // optional context: { conceptName: string } etc.
+  unlockedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("user_achievements")
 }
 
 enum Role {

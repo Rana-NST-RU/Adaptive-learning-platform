@@ -189,9 +189,38 @@ export class QuestionsService {
       });
       newMasteryLevel = afterMastery?.masteryLevel;
 
-      // Sprint 4: FSRS retention + streak (fire-and-forget)
+      // Sprint 4: FSRS retention + streak + achievements (all fire-and-forget)
       this.tracker.updateRetention(userId, question.conceptId, isCorrect, confidenceRating).catch(() => {});
       this.tracker.updateStreak(userId).catch(() => {});
+
+      // Achievement check — returns newly unlocked types (non-blocking)
+      let newAchievements: string[] = [];
+      try {
+        newAchievements = await this.tracker.checkAndUnlockAchievements(userId, {
+          isCorrect,
+          timeTakenMs,
+          conceptName: question.conceptName,
+          masteryLevel: newMasteryLevel,
+          hadConfidenceRating: !!confidenceRating,
+        });
+      } catch {
+        // achievement check errors should never fail the request
+      }
+
+      // Auto-difficulty suggestion based on concept accuracy
+      let suggestedDifficulty: string | undefined;
+      try {
+        const masteryRecord = await this.prisma.conceptMastery.findUnique({
+          where: { userId_conceptId: { userId, conceptId: question.conceptId } },
+          select: { masteryScore: true, totalAttempts: true },
+        });
+        if (masteryRecord && masteryRecord.totalAttempts >= 3) {
+          if (masteryRecord.masteryScore >= 0.85) suggestedDifficulty = 'HARD';
+          else if (masteryRecord.masteryScore <= 0.35) suggestedDifficulty = 'EASY';
+        }
+      } catch {
+        // ignore
+      }
 
       // Award XP with streak multiplier
       if (xpWithBonus > 0) {
@@ -212,6 +241,8 @@ export class QuestionsService {
         xpMultiplier,
         prevMasteryLevel,
         newMasteryLevel,
+        newAchievements,
+        suggestedDifficulty,
       };
     }
 

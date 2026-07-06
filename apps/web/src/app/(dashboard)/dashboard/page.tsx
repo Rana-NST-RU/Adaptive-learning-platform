@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { trackerApi } from '@/lib/api-client';
-import type { DashboardStats, Recommendation } from '@/lib/api-client';
+import type { DashboardStats, Recommendation, HeatmapDay, FadingSoonItem, LearningInsights } from '@/lib/api-client';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -20,7 +20,173 @@ const quickActions = [
   { label: 'Practice Now', desc: 'Sharpen your skills with adaptive quizzes', icon: '⚡', href: '/dashboard/practice', color: 'from-yellow-600/20 to-orange-600/20', border: 'border-yellow-500/20' },
   { label: 'Mastery Map', desc: 'Radar chart · FSRS retention curves', icon: '🧠', href: '/dashboard/mastery', color: 'from-emerald-600/20 to-teal-600/20', border: 'border-emerald-500/20' },
   { label: 'Knowledge Graph', desc: 'Explore prerequisites and learning paths', icon: '🗺️', href: '/dashboard/knowledge-graph', color: 'from-blue-600/20 to-cyan-600/20', border: 'border-blue-500/20' },
+  { label: 'Achievements', desc: 'Badges, milestones and XP rewards', icon: '🏆', href: '/dashboard/achievements', color: 'from-amber-600/20 to-yellow-600/20', border: 'border-amber-500/20' },
+  { label: 'Weekly Review', desc: 'Your 7-day progress digest', icon: '📊', href: '/dashboard/weekly', color: 'from-pink-600/20 to-rose-600/20', border: 'border-pink-500/20' },
+  { label: 'Leaderboard', desc: 'Global XP rankings and podium', icon: '🥇', href: '/dashboard/leaderboard', color: 'from-orange-600/20 to-red-600/20', border: 'border-orange-500/20' },
+  { label: 'My Profile', desc: 'Settings, streak freezes & preferences', icon: '⚙️', href: '/dashboard/profile', color: 'from-slate-600/20 to-gray-600/20', border: 'border-slate-500/20' },
 ];
+
+// ─── Activity Heatmap Component ──────────────────────────────────────────────
+
+function ActivityHeatmap({ data }: { data: HeatmapDay[] }) {
+  // Build a map for O(1) lookup
+  const countMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    data.forEach(d => { m[d.date] = d.count; });
+    return m;
+  }, [data]);
+
+  const totalActivities = data.reduce((s, d) => s + d.count, 0);
+
+  // Build 52 complete weeks ending today (Sun-start)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+
+  // Start of the 52-week window (Monday of week 52 weeks ago)
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - 364); // exactly 52 weeks
+
+  // Build grid: weeks[col][row] = date string
+  const weeks: (string | null)[][] = [];
+  let cur = new Date(startDate);
+  // Advance to Monday
+  const dow = cur.getDay();
+  if (dow !== 1) cur.setDate(cur.getDate() + ((1 - dow + 7) % 7));
+
+  for (let w = 0; w < 53; w++) {
+    const week: (string | null)[] = [];
+    for (let d = 0; d < 7; d++) {
+      const dateStr = cur.toISOString().split('T')[0];
+      week.push(dateStr <= todayStr ? dateStr : null);
+      cur.setDate(cur.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+
+  // Month labels (position of first cell of each month)
+  const monthLabels: { label: string; col: number }[] = [];
+  weeks.forEach((week, col) => {
+    const firstValid = week.find(d => d !== null);
+    if (firstValid) {
+      const date = new Date(firstValid + 'T12:00:00');
+      if (date.getDate() <= 7) {
+        const label = date.toLocaleDateString('en-US', { month: 'short' });
+        if (!monthLabels.length || monthLabels[monthLabels.length - 1].label !== label) {
+          monthLabels.push({ label, col });
+        }
+      }
+    }
+  });
+
+  const cellSize = 12;
+  const gap = 2;
+  const cols = 53;
+  const rows = 7;
+  const svgW = cols * (cellSize + gap);
+  const svgH = rows * (cellSize + gap) + 24; // +24 for month labels
+
+  const getColor = (count: number) => {
+    if (!count) return 'rgba(255,255,255,0.04)';
+    if (count <= 2) return 'rgba(99,102,241,0.25)';
+    if (count <= 5) return 'rgba(99,102,241,0.5)';
+    if (count <= 10) return 'rgba(99,102,241,0.75)';
+    return '#6366f1';
+  };
+
+  return (
+    <div style={{ padding: '22px 24px', borderRadius: 18, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 700, margin: 0 }}>📆 Learning Activity</h3>
+        <span style={{ fontSize: 12, color: '#64748b' }}>{totalActivities.toLocaleString()} answers in the past year</span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <svg width={svgW} height={svgH} style={{ display: 'block' }}>
+          {/* Month labels */}
+          {monthLabels.map(({ label, col }) => (
+            <text key={label + col} x={col * (cellSize + gap)} y={11} fontSize={10} fill="#475569" fontFamily="inherit">{label}</text>
+          ))}
+          {/* Cells */}
+          {weeks.map((week, col) =>
+            week.map((dateStr, row) => {
+              const x = col * (cellSize + gap);
+              const y = row * (cellSize + gap) + 18;
+              const count = dateStr ? (countMap[dateStr] ?? 0) : 0;
+              const isToday = dateStr === todayStr;
+              return (
+                <rect
+                  key={`${col}-${row}`}
+                  x={x} y={y}
+                  width={cellSize} height={cellSize}
+                  rx={2} ry={2}
+                  fill={dateStr ? getColor(count) : 'transparent'}
+                  stroke={isToday ? '#6366f1' : 'none'}
+                  strokeWidth={isToday ? 1 : 0}
+                >
+                  {dateStr && count > 0 && (
+                    <title>{dateStr}: {count} question{count !== 1 ? 's' : ''}</title>
+                  )}
+                </rect>
+              );
+            })
+          )}
+        </svg>
+      </div>
+      {/* Legend */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+        <span style={{ fontSize: 11, color: '#475569' }}>Less</span>
+        {[0, 2, 5, 10, 15].map(c => (
+          <div key={c} style={{ width: 11, height: 11, borderRadius: 2, background: getColor(c) }} />
+        ))}
+        <span style={{ fontSize: 11, color: '#475569' }}>More</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Fading Soon Banner ───────────────────────────────────────────────────────
+
+function FadingSoonBanner({ items }: { items: FadingSoonItem[] }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+
+  return (
+    <div style={{
+      padding: '16px 20px', borderRadius: 14, marginBottom: 24,
+      background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)',
+      animation: 'pulseWarn 3s infinite',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>⚠️</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#fca5a5' }}>
+            {items.length} concept{items.length > 1 ? 's' : ''} fading — predicted &lt;70% retention within 72h
+          </span>
+        </div>
+        <button onClick={() => setDismissed(true)} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 16 }}>✕</button>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {items.slice(0, 5).map((item) => (
+          <Link key={item.conceptId} href={`/dashboard/practice?concept=${item.conceptId}`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+              borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)',
+              textDecoration: 'none',
+            }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#fca5a5' }}>{item.conceptName}</span>
+            <span style={{ fontSize: 11, color: '#ef4444' }}>
+              {Math.round(item.currentRetention * 100)}% · fades in {item.hoursUntilFade}h
+            </span>
+          </Link>
+        ))}
+      </div>
+      <Link href="/dashboard/practice" style={{
+        display: 'inline-block', marginTop: 12, fontSize: 12, color: '#fca5a5',
+        textDecoration: 'underline', textDecorationStyle: 'dashed',
+      }}>Review now to save your progress →</Link>
+    </div>
+  );
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -30,9 +196,12 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [plan, setPlan] = useState<{ totalEstimatedMins: number; multiplier: number; streak: number; revisions: any[]; learnNew: any; practice: any } | null>(null);
+  const [heatmap, setHeatmap] = useState<HeatmapDay[]>([]);
+  const [fadingSoon, setFadingSoon] = useState<FadingSoonItem[]>([]);
   const [statsLoading, setStatsLoading] = useState(true);
   const [recsLoading, setRecsLoading] = useState(true);
   const [domain, setDomain] = useState<'DSA' | 'SYSTEM_DESIGN'>('DSA');
+  const [insights, setInsights] = useState<LearningInsights | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -50,6 +219,17 @@ export default function DashboardPage() {
     // Fetch daily plan (for mini widget)
     trackerApi.getDailyPlan('DSA')
       .then(r => setPlan(r.data))
+      .catch(() => {});
+    // Fetch heatmap + fading-soon in parallel
+    trackerApi.getHeatmap()
+      .then(r => setHeatmap(r.data))
+      .catch(() => {});
+    trackerApi.getFadingSoon(domain)
+      .then(r => setFadingSoon(r.data))
+      .catch(() => {});
+    // Fetch learning insights for optimal window badge
+    trackerApi.getInsights()
+      .then(r => setInsights(r.data))
       .catch(() => {});
   }, []);
 
@@ -152,6 +332,37 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Optimal Learning Window Badge */}
+      {insights?.optimalHours && (
+        <div style={{
+          marginBottom: 24, padding: '14px 20px', borderRadius: 14,
+          background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(99,102,241,0.06))',
+          border: '1px solid rgba(16,185,129,0.2)',
+          display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+            background: 'linear-gradient(135deg, #10b981, #6366f1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+          }}>🌅</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>
+              You learn best at {insights.optimalHours}
+            </div>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+              {insights.optimalHourAccuracy !== null
+                ? `${Math.round(insights.optimalHourAccuracy * 100)}% accuracy during this window · based on ${insights.totalAttempts} attempts`
+                : 'Based on your historical accuracy patterns'}
+            </div>
+          </div>
+          <div style={{
+            marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: '#10b981',
+            background: 'rgba(16,185,129,0.12)', padding: '3px 9px', borderRadius: 20,
+            flexShrink: 0,
+          }}>PEAK WINDOW</div>
+        </div>
+      )}
 
       {/* Sprint 4: Today's Plan mini-widget */}
       {plan && (plan.revisions.length > 0 || plan.learnNew || plan.practice) && (
@@ -365,7 +576,17 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <style>{`@keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }`}</style>
+      {/* ── Activity Heatmap ── */}
+      {heatmap.length > 0 && (
+        <ActivityHeatmap data={heatmap} />
+      )}
+
+      {/* ── Fading Soon Alert ── */}
+      {fadingSoon.length > 0 && (
+        <FadingSoonBanner items={fadingSoon} />
+      )}
+
+      <style>{`@keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} } @keyframes pulseWarn { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.3)} 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }`}</style>
     </div>
   );
 }

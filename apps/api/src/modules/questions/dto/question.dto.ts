@@ -190,5 +190,12 @@ export class AttemptResultDto {
   /** Mastery level after this attempt (0–4) — if different from prev, show level-up */
   @ApiPropertyOptional({ example: 3 })
   newMasteryLevel?: number;
-}
 
+  /** Achievement types newly unlocked by this attempt (e.g. ['FIRST_ANSWER', 'STREAK_3']) */
+  @ApiPropertyOptional({ type: [String], example: ['FIRST_ANSWER'] })
+  newAchievements?: string[];
+
+  /** Auto-difficulty suggestion: 'EASY' if struggling, 'HARD' if mastered (based on concept accuracy) */
+  @ApiPropertyOptional({ example: 'HARD' })
+  suggestedDifficulty?: string;
+}

@@ -133,4 +133,70 @@ export class TrackerController {
     }
     return this.tracker.rateConfidence(req.user.id, dto.attemptId, dto.grade);
   }
+
+  // ─── GET /tracker/heatmap ─────────────────────────────────────────────────
+
+  @Get('heatmap')
+  @ApiOperation({ summary: 'Activity heatmap — daily attempt counts for past 365 days' })
+  getHeatmap(@Request() req: any) {
+    return this.tracker.getActivityHeatmap(req.user.id);
+  }
+
+  // ─── GET /tracker/forecast ────────────────────────────────────────────────
+
+  @Get('forecast')
+  @ApiOperation({ summary: '30-day FSRS review load forecast — how many reviews are due per day' })
+  getForecast(@Request() req: any) {
+    return this.tracker.getForecast(req.user.id);
+  }
+
+  // ─── GET /tracker/fading-soon ─────────────────────────────────────────────
+
+  @Get('fading-soon')
+  @ApiOperation({ summary: 'Concepts predicted to drop below 70% retention in next 72 hours (FSRS)' })
+  @ApiQuery({ name: 'domain', enum: ['DSA', 'SYSTEM_DESIGN'], required: false })
+  @ApiQuery({ name: 'windowHours', type: 'number', required: false })
+  getFadingSoon(
+    @Request() req: any,
+    @Query('domain') domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
+    @Query('windowHours') windowHours?: string,
+  ) {
+    return this.tracker.getFadingSoon(req.user.id, domain, windowHours ? parseInt(windowHours) : 72);
+  }
+
+  // ─── GET /tracker/weekly ──────────────────────────────────────────────────
+
+  @Get('weekly')
+  @ApiOperation({ summary: 'Weekly digest — stats for the past 7 days' })
+  getWeeklyDigest(@Request() req: any) {
+    return this.tracker.getWeeklyDigest(req.user.id);
+  }
+
+  // ─── GET /tracker/achievements ────────────────────────────────────────────
+
+  @Get('achievements')
+  @ApiOperation({ summary: 'All achievements with unlock status and timestamp' })
+  getAchievements(@Request() req: any) {
+    return this.tracker.getAchievements(req.user.id);
+  }
+
+  // ─── POST /tracker/seed-assessment ───────────────────────────────────────
+
+  @Post('seed-assessment')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Seed FSRS with user self-assessment rating (1-5) before first practice',
+    description: 'Primes memory stability so spaced repetition intervals are accurate from day 1.',
+  })
+  seedAssessment(
+    @Request() req: any,
+    @Body() body: { conceptId: string; conceptName: string; domain: 'DSA' | 'SYSTEM_DESIGN'; rating: number },
+  ) {
+    const { conceptId, conceptName, domain, rating } = body;
+    if (!conceptId || rating < 1 || rating > 5) {
+      throw new BadRequestException('conceptId required; rating must be 1-5');
+    }
+    return this.tracker.seedSelfAssessment(req.user.id, conceptId, conceptName, domain, rating);
+  }
 }
+

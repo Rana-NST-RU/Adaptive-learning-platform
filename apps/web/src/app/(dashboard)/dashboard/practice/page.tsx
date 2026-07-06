@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { questionsApi, graphApi, trackerApi } from '@/lib/api-client';
 import type { Question, AttemptResult, QuestionDifficulty, MasteryData } from '@/lib/api-client';
+import { playCorrect, playWrong, playLevelUp, playAchievement, isSoundEnabled, toggleSound } from '@/lib/sound-effects';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ const MASTERY_COLORS = ['#475569', '#6366f1', '#f59e0b', '#10b981', '#f97316'];
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function PracticePage() {
+  const searchParams = useSearchParams();
   const [phase, setPhase] = useState<SessionPhase>('concept-picker');
   const [concepts, setConcepts] = useState<ConceptOption[]>([]);
   const [conceptsLoading, setConceptsLoading] = useState(true);
@@ -55,6 +57,12 @@ export default function PracticePage() {
   const [selectedDiff, setSelectedDiff] = useState<QuestionDifficulty>('MEDIUM');
   const [questionCount, setQuestionCount] = useState(5);
   const [loadingMessage, setLoadingMessage] = useState('Generating AI questions…');
+
+  // Review mode: queue of due concepts to cycle through
+  const [reviewQueue, setReviewQueue] = useState<ConceptOption[]>([]);
+  const [reviewQueueIndex, setReviewQueueIndex] = useState(0);
+  const [isReviewMode, setIsReviewMode] = useState(false);
+  const [reviewModeLoading, setReviewModeLoading] = useState(false);
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -71,6 +79,14 @@ export default function PracticePage() {
   // Sprint 4 refinements
   const [confidenceGiven, setConfidenceGiven] = useState<number | null>(null); // FSRS grade 1-4
   const [levelUpAnim, setLevelUpAnim] = useState<{ visible: boolean; level: number; conceptName: string } | null>(null);
+  const [achievementPopups, setAchievementPopups] = useState<string[]>([]);
+  const [autoSuggestion, setAutoSuggestion] = useState<string | null>(null);
+  const [selfAssessed, setSelfAssessed] = useState<string | null>(null); // conceptId that was assessed
+  const [selfAssessRating, setSelfAssessRating] = useState<number | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') return isSoundEnabled();
+    return true;
+  });
   const startTimeRef = useRef<number>(Date.now());
 
   // #3 — Restore session from localStorage on mount
@@ -106,11 +122,14 @@ export default function PracticePage() {
     }
   }, [phase, currentIndex, stats, questions, selectedDiff, selectedConcept]);
 
-  // Load concepts + mastery
+  // Load concepts + mastery + handle ?mode=review and ?concept=
   useEffect(() => {
+    const mode = searchParams.get('mode');
+    const conceptParam = searchParams.get('concept');
+
     setConceptsLoading(true);
     graphApi.getGraph(selectedDomain)
-      .then((res) => {
+      .then(async (res) => {
         const nodes: ConceptOption[] = res.data.nodes.map((n: any) => ({
           id: n.id, name: n.name, category: n.category,
           difficulty: n.difficulty, domain: n.domain,
@@ -121,7 +140,37 @@ export default function PracticePage() {
         if (nodes.length > 0) {
           questionsApi.getMastery(nodes.map(n => n.id))
             .then(r => setMastery(r.data))
-            .catch(() => {}); // silently fail if not logged in
+            .catch(() => {});
+        }
+
+        // ?mode=review — fetch due concepts and build review queue
+        if (mode === 'review') {
+          setIsReviewMode(true);
+          setReviewModeLoading(true);
+          try {
+            const dueRes = await trackerApi.getDueConcepts(selectedDomain);
+            const dueConcepts: ConceptOption[] = (dueRes.data as any[])
+              .map((d: any) => nodes.find(n => n.id === d.conceptId))
+              .filter(Boolean) as ConceptOption[];
+            if (dueConcepts.length > 0) {
+              setReviewQueue(dueConcepts);
+              setReviewQueueIndex(0);
+              setSelectedConcept(dueConcepts[0]);
+              setQuestionCount(3); // 3 questions per concept in review mode
+            } else {
+              setSessionError('No concepts are currently due for review. Great job keeping up!');
+            }
+          } catch {
+            setSessionError('Could not load review queue. Please try again.');
+          } finally {
+            setReviewModeLoading(false);
+          }
+        }
+
+        // ?concept=ID — pre-select a concept
+        if (conceptParam && !mode) {
+          const found = nodes.find(n => n.id === conceptParam);
+          if (found) setSelectedConcept(found);
         }
       })
       .catch(() => {})
@@ -222,7 +271,22 @@ export default function PracticePage() {
       ) {
         const LEVEL_NAMES = ['Not Started', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
         setLevelUpAnim({ visible: true, level: res.data.newMasteryLevel, conceptName: q.conceptName });
+        playLevelUp();
         setTimeout(() => setLevelUpAnim(null), 3500);
+      }
+      // Sound effect on answer
+      if (res.data.isCorrect) playCorrect();
+      else playWrong();
+      // Achievement popups
+      if (res.data.newAchievements?.length) {
+        playAchievement();
+        setAchievementPopups(res.data.newAchievements);
+        setTimeout(() => setAchievementPopups([]), 4000);
+      }
+      // Auto-difficulty suggestion
+      if (res.data.suggestedDifficulty && res.data.suggestedDifficulty !== selectedDiff) {
+        setAutoSuggestion(res.data.suggestedDifficulty);
+        setTimeout(() => setAutoSuggestion(null), 5000);
       }
       setStats(prev => ({
         total: prev.total + 1,
@@ -276,6 +340,43 @@ export default function PracticePage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'transparent', padding: '24px' }}>
+
+      {/* Review Mode Progress Banner */}
+      {isReviewMode && reviewQueue.length > 0 && (
+        <div style={{
+          marginBottom: 20, padding: '12px 18px', borderRadius: 12,
+          background: 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(245,158,11,0.06))',
+          border: '1px solid rgba(239,68,68,0.2)',
+          display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          <span style={{ fontSize: 20 }}>🔔</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#fca5a5', marginBottom: 6 }}>
+              Review Session · Concept {Math.min(reviewQueueIndex + 1, reviewQueue.length)} of {reviewQueue.length}
+            </div>
+            <div style={{ height: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 4, transition: 'width 0.4s',
+                background: 'linear-gradient(90deg, #ef4444, #f59e0b)',
+                width: `${((reviewQueueIndex) / reviewQueue.length) * 100}%`,
+              }} />
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'right', flexShrink: 0 }}>
+            Now: <strong style={{ color: '#e2e8f0' }}>{reviewQueue[reviewQueueIndex]?.name}</strong>
+          </div>
+        </div>
+      )}
+
+      {/* Review mode loading */}
+      {reviewModeLoading && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderRadius: 12,
+          background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)', marginBottom: 20 }}>
+          <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid rgba(99,102,241,0.2)', borderTopColor: '#6366f1', animation: 'spin 0.8s linear infinite' }} />
+          <span style={{ color: '#a5b4fc', fontSize: 14 }}>Building your personalised review queue…</span>
+        </div>
+      )}
+
       {/* #3 — Inline error banner */}
       {sessionError && (
         <div style={{
@@ -342,9 +443,29 @@ export default function PracticePage() {
           stats={stats}
           concept={selectedConcept?.name ?? ''}
           wrongCount={wrongQuestions.length}
+          isReviewMode={isReviewMode}
+          reviewQueueIndex={reviewQueueIndex}
+          reviewQueueTotal={reviewQueue.length}
           onRestart={() => { setSelectedConcept(null); setWrongQuestions([]); setPhase('concept-picker'); }}
           onRepeat={startSession}
           onRetryWrong={startRetrySession}
+          onNextReview={() => {
+            const nextIdx = reviewQueueIndex + 1;
+            if (nextIdx < reviewQueue.length) {
+              setReviewQueueIndex(nextIdx);
+              setSelectedConcept(reviewQueue[nextIdx]);
+              setWrongQuestions([]);
+              setPhase('concept-picker');
+              // Auto-start after a brief moment for state to settle
+              setTimeout(() => startSession(), 100);
+            } else {
+              // All done
+              setIsReviewMode(false);
+              setReviewQueue([]);
+              setReviewQueueIndex(0);
+              setPhase('concept-picker');
+            }
+          }}
         />
       )}
 
@@ -356,6 +477,66 @@ export default function PracticePage() {
           onDone={() => setLevelUpAnim(null)}
         />
       )}
+
+      {/* Achievement popups */}
+      {achievementPopups.length > 0 && (
+        <div style={{ position: 'fixed', top: 24, right: 24, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 999, pointerEvents: 'none' }}>
+          {achievementPopups.map((type, i) => (
+            <div key={type + i} style={{
+              padding: '12px 18px', borderRadius: 14, minWidth: 220,
+              background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(168,85,247,0.15))',
+              border: '1px solid rgba(245,158,11,0.4)',
+              boxShadow: '0 0 24px rgba(245,158,11,0.3)',
+              animation: 'slideInRight 0.3s ease',
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <span style={{ fontSize: 22 }}>🏆</span>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>Achievement Unlocked!</div>
+                <div style={{ fontSize: 11, color: '#e2e8f0' }}>{type.replace(/_/g, ' ')}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Auto-difficulty suggestion */}
+      {autoSuggestion && (
+        <div style={{
+          position: 'fixed', bottom: 32, right: 24, zIndex: 998,
+          padding: '12px 18px', borderRadius: 14, maxWidth: 260,
+          background: autoSuggestion === 'HARD' ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
+          border: `1px solid ${autoSuggestion === 'HARD' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+          animation: 'slideInRight 0.3s ease',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: autoSuggestion === 'HARD' ? '#fca5a5' : '#6ee7b7', marginBottom: 3 }}>
+            💡 {autoSuggestion === 'HARD' ? 'Ready for a challenge?' : 'Let\'s slow down'}
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>
+            Based on your accuracy, try <strong style={{ color: '#e2e8f0' }}>{autoSuggestion}</strong> difficulty next time.
+          </div>
+        </div>
+      )}
+
+      {/* Sound toggle */}
+      <button
+        onClick={() => { toggleSound(); setSoundEnabled(s => !s); }}
+        title={soundEnabled ? 'Mute sounds' : 'Enable sounds'}
+        style={{
+          position: 'fixed', bottom: 24, left: 24, zIndex: 997,
+          width: 40, height: 40, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.1)',
+          background: 'rgba(15,23,42,0.8)', cursor: 'pointer', fontSize: 18,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        {soundEnabled ? '🔊' : '🔇'}
+      </button>
+
+      <style>{`
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
+      `}</style>
     </div>
   );
 }
@@ -546,6 +727,11 @@ function ConceptPicker({
         )}
       </div>
 
+      {/* Self-Assessment Slider (shown when concept has no prior attempts) */}
+      {selectedConcept && !mastery[selectedConcept.id]?.totalAttempts && (
+        <SelfAssessmentSlider concept={selectedConcept} onRate={() => {}} />
+      )}
+
       {/* Start button */}
       <button
         onClick={onStart}
@@ -572,6 +758,57 @@ function ConceptPicker({
           50% { opacity: 0.5; }
         }
       `}</style>
+    </div>
+  );
+}
+
+
+// ─── Self-Assessment Slider ───────────────────────────────────────────────────
+
+const SELF_ASSESS_LABELS = ['No idea 😰', 'Vague idea 🤔', 'Somewhat sure 🙂', 'Fairly confident 😊', 'Very confident 🌟'];
+
+function SelfAssessmentSlider({ concept, onRate }: { concept: { id: string; name: string; domain: string }; onRate: (r: number) => void }) {
+  const [rating, setRating] = useState<number | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const handleRate = (r: number) => {
+    setRating(r);
+    // Fire-and-forget: seed FSRS algorithm
+    trackerApi.seedAssessment(concept.id, concept.name, concept.domain as any, r).catch(() => {});
+    setSaved(true);
+    onRate(r);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div style={{
+      marginBottom: 16, padding: '16px 20px', borderRadius: 14,
+      background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)',
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#a5b4fc', marginBottom: 12 }}>
+        🧠 Quick Self-Assessment — How well do you know <em style={{ color: '#e2e8f0' }}>{concept.name}</em>?
+      </div>
+      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>
+        This helps FSRS personalise your learning schedule. You can skip it.
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {[1, 2, 3, 4, 5].map(r => (
+          <button key={r} onClick={() => handleRate(r)} style={{
+            flex: 1, padding: '8px 4px', borderRadius: 8, cursor: 'pointer',
+            background: rating === r ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${rating === r ? '#6366f1' : 'rgba(255,255,255,0.06)'}`,
+            color: rating === r ? '#a5b4fc' : '#64748b', fontSize: 11, fontWeight: 600,
+            transition: 'all 0.15s',
+          }}>
+            {r}
+          </button>
+        ))}
+      </div>
+      {rating && (
+        <div style={{ marginTop: 8, fontSize: 12, color: '#6366f1', fontWeight: 600 }}>
+          {saved ? '✓ Got it! FSRS calibrated.' : SELF_ASSESS_LABELS[rating - 1]}
+        </div>
+      )}
     </div>
   );
 }
@@ -993,22 +1230,35 @@ function SessionView({
 
 // ─── Summary Screen ───────────────────────────────────────────────────────────
 
-function SummaryScreen({ stats, concept, wrongCount, onRestart, onRepeat, onRetryWrong }: any) {
+function SummaryScreen({ stats, concept, wrongCount, onRestart, onRepeat, onRetryWrong, isReviewMode, reviewQueueIndex, reviewQueueTotal, onNextReview }: any) {
   const accuracy = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
   const grade = accuracy >= 90 ? 'S' : accuracy >= 75 ? 'A' : accuracy >= 60 ? 'B' : accuracy >= 40 ? 'C' : 'D';
   const gradeColor = ({ S: '#f59e0b', A: '#10b981', B: '#6366f1', C: '#f97316', D: '#ef4444' } as any)[grade];
   const avgScore = stats.results.length > 0
     ? Math.round((stats.results.reduce((s: number, r: AttemptResult) => s + r.score, 0) / stats.results.length) * 100)
     : 0;
+  const hasMoreInQueue = isReviewMode && reviewQueueIndex < reviewQueueTotal - 1;
+  const reviewComplete = isReviewMode && reviewQueueIndex >= reviewQueueTotal - 1;
 
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', textAlign: 'center' }}>
       <div style={{ fontSize: 72, marginBottom: 16, animation: 'bounceIn 0.6s ease' }}>
-        {accuracy >= 80 ? '🏆' : accuracy >= 60 ? '🎯' : '📚'}
+        {reviewComplete ? '🎉' : accuracy >= 80 ? '🏆' : accuracy >= 60 ? '🎯' : '📚'}
       </div>
 
-      <h2 style={{ fontSize: 28, fontWeight: 800, color: '#f1f5f9', marginBottom: 6 }}>Session Complete!</h2>
-      <p style={{ color: '#94a3b8', marginBottom: 32, fontSize: 15 }}>{concept}</p>
+      <h2 style={{ fontSize: 28, fontWeight: 800, color: '#f1f5f9', marginBottom: 6 }}>
+        {reviewComplete ? 'Review Complete!' : 'Session Complete!'}
+      </h2>
+      <p style={{ color: '#94a3b8', marginBottom: reviewComplete ? 8 : 32, fontSize: 15 }}>{concept}</p>
+
+      {/* Review mode progress indicator */}
+      {isReviewMode && (
+        <div style={{ marginBottom: 24, fontSize: 13, color: '#64748b' }}>
+          {reviewComplete
+            ? `✅ All ${reviewQueueTotal} due concepts reviewed!`
+            : `Concept ${reviewQueueIndex + 1} of ${reviewQueueTotal} done`}
+        </div>
+      )}
 
       {/* Stats grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 32 }}>
@@ -1043,7 +1293,7 @@ function SummaryScreen({ stats, concept, wrongCount, onRestart, onRepeat, onRetr
 
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {wrongCount > 0 && (
+        {wrongCount > 0 && !hasMoreInQueue && (
           <button onClick={onRetryWrong} style={{
             flex: 1, minWidth: 140, padding: '14px', borderRadius: 12,
             border: '1px solid rgba(239,68,68,0.4)',
@@ -1051,19 +1301,34 @@ function SummaryScreen({ stats, concept, wrongCount, onRestart, onRepeat, onRetr
             fontWeight: 700, fontSize: 14, cursor: 'pointer',
           }}>🔄 Retry {wrongCount} Mistake{wrongCount > 1 ? 's' : ''}</button>
         )}
-        <button onClick={onRepeat} style={{
-          flex: 1, minWidth: 140, padding: '14px', borderRadius: 12, border: '1px solid rgba(99,102,241,0.3)',
-          background: 'transparent', color: '#a5b4fc', fontWeight: 700, fontSize: 14, cursor: 'pointer',
-        }}>🔁 Repeat Session</button>
-        <button onClick={onRestart} style={{
-          flex: 1, minWidth: 140, padding: '14px', borderRadius: 12, border: 'none',
-          background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-          color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
-          boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
-        }}>✨ New Concept</button>
+        {!hasMoreInQueue && (
+          <button onClick={onRepeat} style={{
+            flex: 1, minWidth: 140, padding: '14px', borderRadius: 12, border: '1px solid rgba(99,102,241,0.3)',
+            background: 'transparent', color: '#a5b4fc', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+          }}>🔁 Repeat Session</button>
+        )}
+        {hasMoreInQueue ? (
+          <button onClick={onNextReview} style={{
+            flex: 2, minWidth: 200, padding: '16px', borderRadius: 12, border: 'none',
+            background: 'linear-gradient(135deg, #ef4444, #f59e0b)',
+            color: '#fff', fontWeight: 800, fontSize: 15, cursor: 'pointer',
+            boxShadow: '0 4px 20px rgba(239,68,68,0.4)',
+            animation: 'pulseReview 2s infinite',
+          }}>Next Concept → ({reviewQueueIndex + 2} of {reviewQueueTotal})</button>
+        ) : (
+          <button onClick={onRestart} style={{
+            flex: 1, minWidth: 140, padding: '14px', borderRadius: 12, border: 'none',
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+            boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
+          }}>{reviewComplete ? '🏠 Back to Dashboard' : '✨ New Concept'}</button>
+        )}
       </div>
 
-      <style>{`@keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 60% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }`}</style>
+      <style>{`
+        @keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 60% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes pulseReview { 0%,100% { box-shadow: 0 4px 20px rgba(239,68,68,0.4); } 50% { box-shadow: 0 4px 30px rgba(239,68,68,0.7); } }
+      `}</style>
     </div>
   );
 }

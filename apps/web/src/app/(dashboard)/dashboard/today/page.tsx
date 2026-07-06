@@ -122,7 +122,7 @@ export default function TodayPage() {
       .finally(() => setLoading(false));
   }, [domain]);
 
-  const markDone = (id: string) => setCompletedItems(prev => new Set([...prev, id]));
+  const markDone = (id: string) => setCompletedItems(prev => new Set(Array.from(prev).concat(id)));
 
   if (loading) {
     return (

@@ -123,12 +123,50 @@ export const authApi = {
   me: () => apiClient.get('/auth/me'),
 };
 
+// ─── User Types ───────────────────────────────────────────────
+
+export interface LeaderboardUser {
+  rank: number;
+  userId: string;
+  name: string;
+  avatar: string | null;
+  totalXP: number;
+  currentLevel: number;
+  isCurrentUser: boolean;
+}
+
+export interface LeaderboardResponse {
+  leaderboard: LeaderboardUser[];
+  currentUserRank: number | null;
+}
+
+export interface UserProfileData {
+  id: string;
+  name: string;
+  avatar: string | null;
+  email: string | null;
+  profile: {
+    totalXP: number;
+    currentLevel: number;
+    preferredDomain: 'DSA' | 'SYSTEM_DESIGN';
+    dailyGoalMins: number;
+    timezone: string;
+    bio: string | null;
+    institution: string | null;
+    targetExam: string | null;
+  } | null;
+}
+
 // ─── User Endpoints ───────────────────────────────────────────
 
 export const usersApi = {
-  getMe: () => apiClient.get('/users/me'),
+  getMe: () => apiClient.get<UserProfileData>('/users/me'),
   getStats: (userId: string) => apiClient.get(`/users/${userId}/stats`),
-  updateMe: (data: Record<string, any>) => apiClient.patch('/users/me', data),
+  updateMe: (data: Record<string, any>) => apiClient.patch<UserProfileData>('/users/me', data),
+  getLeaderboard: (domain?: 'DSA' | 'SYSTEM_DESIGN') =>
+    apiClient.get<LeaderboardResponse>('/users/leaderboard', domain ? { params: { domain } } : undefined),
+  useStreakFreeze: () =>
+    apiClient.post<{ freezesLeft: number; message: string }>('/users/streak-freeze/use'),
 };
 
 // ─── Knowledge Graph Endpoints ────────────────────────────────
@@ -218,6 +256,10 @@ export interface AttemptResult {
   prevMasteryLevel?: number;
   /** Mastery level after this attempt (0-4) — if > prevMasteryLevel, trigger level-up animation */
   newMasteryLevel?: number;
+  /** Sprint 4: Achievements unlocked by this attempt */
+  newAchievements?: string[];
+  /** Sprint 4: Heuristic difficulty suggestion */
+  suggestedDifficulty?: string;
 }
 
 export interface GenerateQuestionsPayload {
@@ -356,6 +398,50 @@ export interface LearningInsights {
   message?: string;
 }
 
+// ─── New Analytics Types (Sprint 4 Extended) ────────────────────
+
+export interface HeatmapDay {
+  date: string;   // ISO 'YYYY-MM-DD'
+  count: number;
+}
+
+export interface ForecastDay {
+  date: string;
+  dueCount: number;
+}
+
+export interface FadingSoonItem {
+  conceptId: string;
+  conceptName: string;
+  currentRetention: number;
+  hoursUntilFade: number;
+  fadingAt: string;
+  masteryLevel: number;
+}
+
+export interface Achievement {
+  type: string;
+  icon: string;
+  label: string;
+  desc: string;
+  rarity: 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+  unlocked: boolean;
+  unlockedAt: string | null;
+  metadata: Record<string, any> | null;
+}
+
+export interface WeeklyDigest {
+  totalAttempts: number;
+  correctAttempts: number;
+  accuracy: number | null;
+  avgTimeSec: number | null;
+  studyDays: number;
+  currentStreak: number;
+  improvedConceptsCount: number;
+  improvedConcepts: Array<{ name: string; level: number }>;
+  dailyBreakdown: Array<{ date: string; count: number }>;
+}
+
 // ─── Tracker API ────────────────────────────────────────────────
 
 export const trackerApi = {
@@ -395,4 +481,25 @@ export const trackerApi = {
    */
   rateConfidence: (attemptId: string, grade: 1 | 2 | 3 | 4) =>
     apiClient.post('/tracker/rate-confidence', { attemptId, grade }),
+
+  /** GitHub-style 52-week activity heatmap data */
+  getHeatmap: () => apiClient.get<HeatmapDay[]>('/tracker/heatmap'),
+
+  /** 30-day FSRS review load forecast */
+  getForecast: () => apiClient.get<ForecastDay[]>('/tracker/forecast'),
+
+  /** Concepts predicted to drop below 70% retention in next N hours */
+  getFadingSoon: (domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA', windowHours = 72) =>
+    apiClient.get<FadingSoonItem[]>('/tracker/fading-soon', { params: { domain, windowHours } }),
+
+  /** Weekly digest — last 7 days stats */
+  getWeeklyDigest: () => apiClient.get<WeeklyDigest>('/tracker/weekly'),
+
+  /** All achievements with unlock status */
+  getAchievements: () => apiClient.get<Achievement[]>('/tracker/achievements'),
+
+  /** Seed FSRS with self-assessment rating (1-5) before first practice */
+  seedAssessment: (conceptId: string, conceptName: string, domain: 'DSA' | 'SYSTEM_DESIGN', rating: number) =>
+    apiClient.post('/tracker/seed-assessment', { conceptId, conceptName, domain, rating }),
 };
+

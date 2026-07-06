@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { User, UserProfile } from '@prisma/client';
 
@@ -48,6 +53,8 @@ export class UsersService {
       institution: string;
       targetExam: string;
       dailyGoalMins: number;
+      timezone: string;
+      preferredDomain: 'DSA' | 'SYSTEM_DESIGN';
     }>,
   ) {
     const { name, avatar, ...profileData } = data;
@@ -99,6 +106,85 @@ export class UsersService {
         currentStreak: streak?.currentStreak ?? 0,
         longestStreak: streak?.longestStreak ?? 0,
       },
+    };
+  }
+
+  // ─── Leaderboard ─────────────────────────────────────────────
+
+  async getLeaderboard(requestingUserId: string, domain?: 'DSA' | 'SYSTEM_DESIGN') {
+    // Fetch top 50 users by totalXP from UserProfile
+    const profiles = await this.prisma.userProfile.findMany({
+      take: 50,
+      orderBy: { totalXP: 'desc' },
+      include: {
+        user: {
+          select: { id: true, name: true, avatar: true },
+        },
+      },
+    });
+
+    const leaderboard = profiles.map((p, index) => ({
+      rank: index + 1,
+      userId: p.userId,
+      name: p.user.name,
+      avatar: p.user.avatar,
+      totalXP: p.totalXP,
+      currentLevel: p.currentLevel,
+      isCurrentUser: p.userId === requestingUserId,
+    }));
+
+    // Find requesting user's rank if not in top 50
+    const currentUserEntry = leaderboard.find(e => e.userId === requestingUserId);
+    let currentUserRank: number | null = null;
+
+    if (!currentUserEntry) {
+      const higherCount = await this.prisma.userProfile.count({
+        where: {
+          totalXP: {
+            gt: (await this.prisma.userProfile.findUnique({
+              where: { userId: requestingUserId },
+            }))?.totalXP ?? 0,
+          },
+        },
+      });
+      currentUserRank = higherCount + 1;
+    }
+
+    return {
+      leaderboard,
+      currentUserRank: currentUserEntry?.rank ?? currentUserRank,
+    };
+  }
+
+  // ─── Streak Freeze ────────────────────────────────────────────
+
+  async useStreakFreeze(userId: string): Promise<{ freezesLeft: number; message: string }> {
+    const streak = await this.prisma.learningStreak.findUnique({
+      where: { userId },
+    });
+
+    if (!streak) {
+      throw new NotFoundException('No streak record found. Start learning first!');
+    }
+
+    if (streak.streakFreezes <= 0) {
+      throw new BadRequestException('No streak freezes left.');
+    }
+
+    const updated = await this.prisma.learningStreak.update({
+      where: { userId },
+      data: {
+        streakFreezes: { decrement: 1 },
+        // Extend lastActiveDate to today to protect the streak
+        lastActiveDate: new Date(),
+      },
+    });
+
+    this.logger.log(`[StreakFreeze] user=${userId} froze streak, ${updated.streakFreezes} left`);
+
+    return {
+      freezesLeft: updated.streakFreezes,
+      message: `Streak freeze used! You have ${updated.streakFreezes} freeze${updated.streakFreezes !== 1 ? 's' : ''} remaining.`,
     };
   }
 }
