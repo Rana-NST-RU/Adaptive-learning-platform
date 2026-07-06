@@ -153,3 +153,13 @@ input:-webkit-autofill:active {
 .animate-pulse-glow {
   animation: pulse-glow 3s ease-in-out infinite;
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes pulseWarn {
+  0%, 100% { border-color: rgba(239,68,68,0.2); }
+  50%       { border-color: rgba(239,68,68,0.45); }
+}

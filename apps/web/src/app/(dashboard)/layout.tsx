@@ -10,6 +10,7 @@ interface User {
   name?: string;
   phone?: string;
   email?: string;
+  role?: string;
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -20,30 +21,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const checkAuth = async () => {
-      const stored = localStorage.getItem('user');
-      if (stored) {
-        try {
-          setUser(JSON.parse(stored));
-          return; // Auth is good
-        } catch {}
-      }
-
-      // If no stored user (like after Google OAuth redirect), try to fetch using the HttpOnly cookie
+      // Always call /auth/me to get fresh role info (role may not be in localStorage)
       try {
         const { data } = await authApi.me();
         if (data && data.user) {
-          setUser(data.user);
-          localStorage.setItem('user', JSON.stringify(data.user));
-          return; // Auth is good
+          const freshUser = data.user as User;
+          setUser(freshUser);
+          // Merge role into localStorage so profile pages can read it
+          const stored = localStorage.getItem('user');
+          const parsed = stored ? JSON.parse(stored) : {};
+          localStorage.setItem('user', JSON.stringify({ ...parsed, ...freshUser }));
+          return;
         }
-      } catch (err) {
-        console.error('Session check failed:', err);
+      } catch {
+        // Fallback: try localStorage if server is unreachable
+        const stored = localStorage.getItem('user');
+        if (stored) {
+          try { setUser(JSON.parse(stored)); return; } catch {}
+        }
       }
-
-      // If we reach here, neither localStorage nor the cookie worked
       router.push('/login');
     };
-
     checkAuth();
   }, [router]);
 
@@ -127,6 +125,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </Link>
             );
           })}
+
+          {/* Admin Portal — only visible for ADMIN / TEACHER */}
+          {(user?.role === 'ADMIN' || user?.role === 'TEACHER') && (
+            <Link
+              href="/admin"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all mt-2"
+              style={{
+                background: 'linear-gradient(135deg, rgba(220,38,38,0.12), rgba(147,51,234,0.12))',
+                border: '1px solid rgba(220,38,38,0.25)',
+                color: '#f87171',
+                fontWeight: 600,
+                textDecoration: 'none',
+              }}
+            >
+              <span className="text-base flex-shrink-0">🛡️</span>
+              {sidebarOpen && <span className="text-sm">Admin Portal</span>}
+            </Link>
+          )}
         </nav>
 
         {/* User section */}

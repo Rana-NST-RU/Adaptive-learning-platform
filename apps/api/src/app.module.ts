@@ -8,6 +8,7 @@ import { UsersModule } from './modules/users/users.module';
 import { KnowledgeGraphModule } from './modules/knowledge-graph/graph.module';
 import { QuestionsModule } from './modules/questions/questions.module';
 import { TrackerModule } from './modules/learning-tracker/tracker.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { TrackerModule } from './modules/learning-tracker/tracker.module';
     KnowledgeGraphModule,
     QuestionsModule,
     TrackerModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

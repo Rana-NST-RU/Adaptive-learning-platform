@@ -1,0 +1,132 @@
+import {
+  Controller,
+  Get,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminService } from './admin.service';
+
+@ApiTags('admin')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN', 'TEACHER')
+@Controller('admin')
+export class AdminController {
+  constructor(private readonly adminService: AdminService) {}
+
+  // ─── Platform Analytics ────────────────────────────────────────────────────
+
+  @Get('analytics')
+  @ApiOperation({ summary: 'Global platform analytics: DAU/WAU/MAU, accuracy, sessions' })
+  getAnalytics() {
+    return this.adminService.getPlatformAnalytics();
+  }
+
+  @Get('analytics/dau-trend')
+  @ApiOperation({ summary: '14-day daily active user trend' })
+  getDauTrend() {
+    return this.adminService.getDauTrend();
+  }
+
+  @Get('analytics/top-concepts')
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiOperation({ summary: 'Top concepts by learner count' })
+  getTopConcepts(@Query('limit') limit?: number) {
+    return this.adminService.getTopConcepts(limit ? Number(limit) : 10);
+  }
+
+  // ─── User Management ──────────────────────────────────────────────────────
+
+  @Get('users')
+  @ApiOperation({ summary: 'List all users (paginated, searchable)' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  listUsers(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.listUsers(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
+      search,
+    );
+  }
+
+  @Patch('users/:id/role')
+  @Roles('ADMIN') // Only ADMIN can change roles (not TEACHER)
+  @ApiOperation({ summary: 'Update a user role (ADMIN only)' })
+  updateUserRole(
+    @Param('id') id: string,
+    @Body() body: { role: 'STUDENT' | 'TEACHER' | 'ADMIN' },
+  ) {
+    return this.adminService.updateUserRole(id, body.role);
+  }
+
+  @Patch('users/:id/active')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Activate or deactivate a user (ADMIN only)' })
+  toggleUserActive(
+    @Param('id') id: string,
+    @Body() body: { isActive: boolean },
+  ) {
+    return this.adminService.toggleUserActive(id, body.isActive);
+  }
+
+  // ─── Question Moderation ──────────────────────────────────────────────────
+
+  @Get('questions')
+  @ApiOperation({ summary: 'List all questions (paginated, filterable)' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'domain', required: false, enum: ['DSA', 'SYSTEM_DESIGN'] })
+  @ApiQuery({ name: 'difficulty', required: false, enum: ['EASY', 'MEDIUM', 'HARD'] })
+  listQuestions(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('domain') domain?: string,
+    @Query('difficulty') difficulty?: string,
+  ) {
+    return this.adminService.listQuestions(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
+      domain,
+      difficulty,
+    );
+  }
+
+  @Patch('questions/:id')
+  @ApiOperation({ summary: 'Edit a question (content, difficulty, isActive)' })
+  updateQuestion(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      content?: string;
+      correctAnswer?: string;
+      explanation?: string;
+      isActive?: boolean;
+      difficulty?: 'EASY' | 'MEDIUM' | 'HARD';
+    },
+  ) {
+    return this.adminService.updateQuestion(id, body);
+  }
+
+  @Delete('questions/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Soft-delete (deactivate) a question' })
+  deleteQuestion(@Param('id') id: string) {
+    return this.adminService.deleteQuestion(id);
+  }
+}

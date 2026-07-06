@@ -505,3 +505,30 @@ export const trackerApi = {
     apiClient.post('/tracker/seed-assessment', { conceptId, conceptName, domain, rating }),
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin API — Sprint 6 (ADMIN / TEACHER only)
+// ─────────────────────────────────────────────────────────────────────────────
+export const adminApi = {
+  // Analytics
+  getAnalytics: () => apiClient.get('/admin/analytics'),
+  getDauTrend: () => apiClient.get('/admin/analytics/dau-trend'),
+  getTopConcepts: (limit = 10) => apiClient.get('/admin/analytics/top-concepts', { params: { limit } }),
+
+  // Users
+  listUsers: (page = 1, limit = 20, search?: string) =>
+    apiClient.get('/admin/users', { params: { page, limit, search } }),
+  updateUserRole: (id: string, role: string) =>
+    apiClient.patch(`/admin/users/${id}/role`, { role }),
+  toggleUserActive: (id: string, isActive: boolean) =>
+    apiClient.patch(`/admin/users/${id}/active`, { isActive }),
+
+  // Questions
+  listQuestions: (page = 1, limit = 20, domain?: string, difficulty?: string) =>
+    apiClient.get('/admin/questions', { params: { page, limit, domain, difficulty } }),
+  updateQuestion: (id: string, data: Record<string, any>) =>
+    apiClient.patch(`/admin/questions/${id}`, data),
+  deleteQuestion: (id: string) =>
+    apiClient.delete(`/admin/questions/${id}`),
+};
+
+
