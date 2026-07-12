@@ -441,4 +441,18 @@ export class QuestionsService {
       tags: q.tags ?? [],
     };
   }
+
+  async flagQuestion(id: string, userId: string, reason: string) {
+    const q = await this.prisma.question.findUnique({ where: { id } });
+    if (!q) throw new NotFoundException('Question not found');
+
+    return this.prisma.question.update({
+      where: { id },
+      data: {
+        isFlagged: true,
+        flagReason: reason,
+        flaggedBy: userId,
+      },
+    });
+  }
 }

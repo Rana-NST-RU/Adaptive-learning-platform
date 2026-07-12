@@ -94,15 +94,17 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## ✅ Sprint 6: Admin/Teacher Portal — COMPLETE
+## 🛡️ Sprint 6: Admin/Teacher Portal
 **Goal:** Provide tooling for content moderation and platform oversight.
 
-> **Delivered:**
-> - `@Roles()` decorator + `RolesGuard` — RBAC on every `/admin/*` route (ADMIN/TEACHER). Role-mutation routes further restricted to ADMIN only.
-> - `AdminModule` backend: platform analytics (DAU/WAU/MAU, global accuracy, avg session time, 14-day trend, top concepts by engagement), paginated user list with search + role/active management, paginated question list with domain/difficulty filters + edit + soft-delete.
-> - `/admin` portal (separate layout, auth-gated): Overview dashboard, Users table, Questions moderation, Analytics deep-dive — all with toast notifications and pagination.
-> - Student sidebar shows 🛡️ Admin Portal link conditionally for ADMIN/TEACHER users.
-> - `authApi.me()` now always called on dashboard load to keep role info fresh.
+- **Backend:**
+  - Role-based Access Control (RBAC) using NestJS Guards (restricting routes to `ADMIN` or `TEACHER`).
+  - Endpoints to manually curate/edit LLM-generated questions.
+  - Global platform analytics (DAU, question success rates, average session times).
+- **Frontend:**
+  - Separate Admin Dashboard route.
+  - Data tables fo  r managing users, overriding concept masteries, and reviewing flagged questions.
+  - Knowledge Graph editor (UI to manually add/remove prerequisite edges).
 
 ---
 

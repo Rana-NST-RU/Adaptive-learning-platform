@@ -2,11 +2,13 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
   Query,
   Body,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -23,6 +25,9 @@ import {
   TopicDto,
   SeedStatusDto,
 } from './dto/graph.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('graph')
 @Controller('graph')
@@ -107,5 +112,29 @@ export class GraphController {
     @Body() body: { force?: boolean },
   ): Promise<{ seeded: boolean; message: string }> {
     return this.graphService.seedDatabase(body?.force ?? false);
+  }
+
+  // ─── Admin Edge Management ────────────────────────────────────────────────
+
+  @Post('edges')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'TEACHER')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Add a prerequisite edge between two concepts (ADMIN/TEACHER)' })
+  addEdge(
+    @Body() body: { fromConceptId: string; toConceptId: string; type?: 'REQUIRES' | 'LEADS_TO' },
+  ) {
+    return this.graphService.addEdge(body.fromConceptId, body.toConceptId, body.type ?? 'REQUIRES');
+  }
+
+  @Delete('edges')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'TEACHER')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove an edge between two concepts (ADMIN/TEACHER)' })
+  removeEdge(
+    @Body() body: { fromConceptId: string; toConceptId: string },
+  ) {
+    return this.graphService.removeEdge(body.fromConceptId, body.toConceptId);
   }
 }

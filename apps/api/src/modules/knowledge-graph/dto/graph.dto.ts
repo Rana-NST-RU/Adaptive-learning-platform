@@ -20,7 +20,7 @@ export class ConceptNodeDto {
   @ApiProperty({ example: 'Searching' })
   category: string;
 
-  @ApiProperty({ example: 2, description: 'Difficulty on a 1–5 scale' })
+  @ApiProperty({ example: 2, description: 'Difficulty on a 1-5 scale' })
   difficulty: number;
 
   @ApiProperty({ example: 200 })

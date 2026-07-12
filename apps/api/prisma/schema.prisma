@@ -169,12 +169,16 @@ model Question {
   llmModel       String?
   isValidated    Boolean           @default(false)
   isActive       Boolean           @default(true)
+  isFlagged      Boolean           @default(false)
+  flagReason     String?
+  flaggedBy      String?           // userId who flagged it
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   attempts       QuestionAttempt[]
 
   @@index([conceptId, difficulty])
   @@index([domain, difficulty])
+  @@index([isFlagged])
   @@map("questions")
 }
 
@@ -229,6 +233,24 @@ model UserAchievement {
   @@unique([userId, type])
   @@index([userId])
   @@map("user_achievements")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String                     // admin/teacher who performed action
+  actorName  String
+  action     String                     // e.g. ROLE_CHANGE, QUESTION_EDIT, MASTERY_OVERRIDE, QUESTION_FLAG
+  targetType String                     // USER | QUESTION | MASTERY
+  targetId   String
+  targetName String?
+  before     Json?                      // previous state
+  after      Json?                      // new state
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("admin_audit_logs")
 }
 
 enum Role {

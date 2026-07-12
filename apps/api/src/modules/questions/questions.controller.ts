@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiTags,
-  ApiBearerAuth,
+  ApiBearerAuth,  
   ApiOperation,
   ApiResponse,
   ApiQuery,
@@ -116,6 +116,20 @@ export class QuestionsController {
     if (!req.user?.id || !conceptIds) return {};
     const ids = conceptIds.split(',').filter(Boolean);
     return this.questionsService.getMasteryForConcepts(req.user.id, ids);
+  }
+ 
+  // ─── POST /questions/:id/flag ──────────────────────────────────────────────
+  
+  @Post(':id/flag')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Flag a question for review by admins' })
+  flagQuestion(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+  ) {
+    return this.questionsService.flagQuestion(id, req.user.id, reason);
   }
 
   // ─── GET /questions/:id ──────────────────────────────────────────────────

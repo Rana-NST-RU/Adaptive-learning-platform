@@ -523,12 +523,35 @@ export const adminApi = {
     apiClient.patch(`/admin/users/${id}/active`, { isActive }),
 
   // Questions
-  listQuestions: (page = 1, limit = 20, domain?: string, difficulty?: string) =>
-    apiClient.get('/admin/questions', { params: { page, limit, domain, difficulty } }),
+  listQuestions: (page = 1, limit = 20, domain?: string, difficulty?: string, isFlagged?: boolean) =>
+    apiClient.get('/admin/questions', { params: { page, limit, domain, difficulty, isFlagged } }),
   updateQuestion: (id: string, data: Record<string, any>) =>
     apiClient.patch(`/admin/questions/${id}`, data),
   deleteQuestion: (id: string) =>
     apiClient.delete(`/admin/questions/${id}`),
+  bulkUpdateQuestions: (ids: string[], data: Record<string, any>) =>
+    Promise.all(ids.map(id => apiClient.patch(`/admin/questions/${id}`, data))),
+
+  // Mastery Override
+  overrideMastery: (userId: string, conceptId: string, masteryScore: number) =>
+    apiClient.patch(`/admin/mastery/${userId}/${conceptId}`, { masteryScore }),
+  getUserMastery: (userId: string, page = 1, limit = 20) =>
+    apiClient.get('/tracker/mastery', { params: { userId, page, limit } }),
+
+  // Audit Logs
+  getAuditLogs: (page = 1, limit = 50) =>
+    apiClient.get('/admin/audit-logs', { params: { page, limit } }),
 };
 
+// Flag a question (available to all authenticated users)
+export const flagQuestion = (questionId: string, reason: string) =>
+  apiClient.post(`/questions/${questionId}/flag`, { reason });
 
+// Knowledge Graph admin operations
+export const graphAdminApi = {
+  getGraph: (domain?: string) => apiClient.get('/knowledge-graph/graph', { params: { domain } }),
+  addEdge: (from: string, to: string, type = 'REQUIRES') =>
+    apiClient.post('/knowledge-graph/edges', { fromConceptId: from, toConceptId: to, type }),
+  removeEdge: (from: string, to: string) =>
+    apiClient.delete('/knowledge-graph/edges', { data: { fromConceptId: from, toConceptId: to } }),
+};

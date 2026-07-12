@@ -10,6 +10,8 @@ const NAV = [
   { href: '/admin/users', label: 'Users', icon: '👥' },
   { href: '/admin/questions', label: 'Questions', icon: '❓' },
   { href: '/admin/analytics', label: 'Analytics', icon: '📈' },
+  { href: '/admin/knowledge-graph', label: 'KG Editor', icon: '🕸️' },
+  { href: '/admin/audit-log', label: 'Audit Log', icon: '🗓️' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

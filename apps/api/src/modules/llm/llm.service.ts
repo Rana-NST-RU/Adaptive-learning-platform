@@ -118,7 +118,7 @@ Return ONLY this JSON structure:
     }
   ]
 }`;
-  }
+  }       
 
   private parseResponse(
     raw: string,

@@ -11,6 +11,8 @@ interface AdminQuestion {
   questionType: string;
   difficulty: 'EASY' | 'MEDIUM' | 'HARD';
   isActive: boolean;
+  isFlagged: boolean;
+  flagReason?: string;
   createdAt: string;
   _count: { attempts: number };
 }
@@ -23,36 +25,53 @@ interface QuestionsResponse {
 }
 
 const DIFF_COLORS = { EASY: '#10b981', MEDIUM: '#f59e0b', HARD: '#ef4444' };
+const DIFF_BG = { EASY: 'rgba(16,185,129,0.1)', MEDIUM: 'rgba(245,158,11,0.1)', HARD: 'rgba(239,68,68,0.1)' };
 
 export default function AdminQuestionsPage() {
   const [data, setData] = useState<QuestionsResponse | null>(null);
   const [page, setPage] = useState(1);
   const [domain, setDomain] = useState('');
   const [difficulty, setDifficulty] = useState('');
+  const [tab, setTab] = useState<'all' | 'flagged'>('all');
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<AdminQuestion | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<AdminQuestion>>({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
+  // Bulk
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 3200);
   };
 
   const fetchQuestions = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await adminApi.listQuestions(page, 15, domain || undefined, difficulty || undefined);
+      const res = await adminApi.listQuestions(
+        page, 15,
+        domain || undefined,
+        difficulty || undefined,
+        tab === 'flagged' ? true : undefined,
+      );
       setData(res.data as QuestionsResponse);
+      setSelected(new Set());
     } catch {
       showToast('Failed to load questions', false);
     } finally {
       setLoading(false);
     }
-  }, [page, domain, difficulty]);
+  }, [page, domain, difficulty, tab]);
 
   useEffect(() => { fetchQuestions(); }, [fetchQuestions]);
+
+  const handleEdit = (q: AdminQuestion) => {
+    setEditing(q);
+    setEditDraft({ content: q.content, difficulty: q.difficulty });
+  };
 
   const handleSave = async () => {
     if (!editing) return;
@@ -62,234 +81,316 @@ export default function AdminQuestionsPage() {
       showToast('Question updated');
       setEditing(null);
       fetchQuestions();
-    } catch {
-      showToast('Update failed', false);
-    } finally {
-      setSaving(false);
+    } catch { showToast('Failed to update', false); }
+    finally { setSaving(false); }
+  };
+
+  const handleToggleActive = async (q: AdminQuestion) => {
+    try {
+      await adminApi.updateQuestion(q.id, { isActive: !q.isActive });
+      showToast(q.isActive ? 'Question deactivated' : 'Question reactivated');
+      fetchQuestions();
+    } catch { showToast('Failed to update', false); }
+  };
+
+  const handleUnflag = async (id: string) => {
+    try {
+      await adminApi.updateQuestion(id, { isFlagged: false, flagReason: null });
+      showToast('Question unflagged');
+      fetchQuestions();
+    } catch { showToast('Failed to unflag', false); }
+  };
+
+  // Bulk
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+
+  const selectAll = () => {
+    if (!data) return;
+    if (selected.size === data.questions.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(data.questions.map(q => q.id)));
     }
   };
 
-  const handleDelete = async (q: AdminQuestion) => {
-    if (!confirm(`Deactivate question from "${q.conceptName}"?`)) return;
+  const bulkDeactivate = async () => {
+    setBulkLoading(true);
     try {
-      await adminApi.deleteQuestion(q.id);
-      showToast('Question deactivated');
+      await adminApi.bulkUpdateQuestions(Array.from(selected), { isActive: false });
+      showToast(`Deactivated ${selected.size} questions`);
       fetchQuestions();
-    } catch {
-      showToast('Deactivation failed', false);
-    }
+    } catch { showToast('Bulk action failed', false); }
+    finally { setBulkLoading(false); }
   };
 
-  const handleReactivate = async (q: AdminQuestion) => {
+  const bulkUnflag = async () => {
+    setBulkLoading(true);
     try {
-      await adminApi.updateQuestion(q.id, { isActive: true });
-      showToast('Question reactivated');
+      await adminApi.bulkUpdateQuestions(Array.from(selected), { isFlagged: false });
+      showToast(`Unflagged ${selected.size} questions`);
       fetchQuestions();
-    } catch {
-      showToast('Update failed', false);
-    }
+    } catch { showToast('Bulk action failed', false); }
+    finally { setBulkLoading(false); }
   };
 
   return (
-    <div style={{ padding: '32px 40px', maxWidth: 1200 }}>
-      {/* Toast */}
+    <div style={{ padding: '32px 40px', maxWidth: 1400, margin: '0 auto' }}>
+      <style>{`
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+
       {toast && (
         <div style={{
           position: 'fixed', top: 24, right: 24, zIndex: 9999,
-          padding: '12px 20px', borderRadius: 12,
           background: toast.ok ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
-          border: `1px solid ${toast.ok ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
-          color: toast.ok ? '#6ee7b7' : '#fca5a5', fontWeight: 600, fontSize: 13,
+          border: `1px solid ${toast.ok ? '#10b981' : '#ef4444'}`,
+          borderRadius: 12, padding: '12px 20px', color: toast.ok ? '#10b981' : '#ef4444',
+          fontWeight: 600, fontSize: 14, backdropFilter: 'blur(12px)', animation: 'fadeUp 0.2s ease',
         }}>
-          {toast.ok ? '✅' : '❌'} {toast.msg}
+          {toast.ok ? '✓' : '✕'} {toast.msg}
+        </div>
+      )}
+
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700, color: '#f1f5f9', margin: 0 }}>📋 Question Moderation</h1>
+        <p style={{ color: '#64748b', margin: '6px 0 0', fontSize: 14 }}>{data?.total ?? 0} questions</p>
+      </div>
+
+      {/* Tabs + Filters */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        {/* Tabs */}
+        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 3 }}>
+          {([['all', '📋 All Questions'], ['flagged', '🚩 Flagged']] as const).map(([key, label]) => (
+            <button key={key} onClick={() => { setTab(key); setPage(1); }}
+              style={{
+                padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                background: tab === key ? 'rgba(99,102,241,0.3)' : 'transparent',
+                color: tab === key ? '#a5b4fc' : '#64748b',
+                transition: 'all 0.15s',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Filters */}
+        {['', 'DSA', 'SYSTEM_DESIGN'].map(d => (
+          <button key={d} onClick={() => { setDomain(d); setPage(1); }}
+            style={{
+              padding: '7px 14px', borderRadius: 8, border: '1px solid',
+              borderColor: domain === d ? '#6366f1' : 'rgba(255,255,255,0.1)',
+              background: domain === d ? 'rgba(99,102,241,0.15)' : 'transparent',
+              color: domain === d ? '#a5b4fc' : '#64748b', cursor: 'pointer', fontSize: 13,
+            }}>
+            {d || 'All Domains'}
+          </button>
+        ))}
+        <select value={difficulty} onChange={e => { setDifficulty(e.target.value); setPage(1); }}
+          style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#94a3b8', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
+          <option value="">All Difficulties</option>
+          <option value="EASY">Easy</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="HARD">Hard</option>
+        </select>
+      </div>
+
+      {/* Bulk Bar */}
+      {selected.size > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+          background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)',
+          borderRadius: 12, padding: '10px 18px', animation: 'fadeUp 0.2s ease',
+        }}>
+          <span style={{ color: '#a5b4fc', fontWeight: 600, fontSize: 14 }}>{selected.size} selected</span>
+          <div style={{ flex: 1 }} />
+          <button onClick={bulkDeactivate} disabled={bulkLoading}
+            style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.1)', color: '#ef4444', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+            ⊖ Deactivate Selected
+          </button>
+          {tab === 'flagged' && (
+            <button onClick={bulkUnflag} disabled={bulkLoading}
+              style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.1)', color: '#10b981', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+              ✓ Unflag Selected
+            </button>
+          )}
+          <button onClick={() => setSelected(new Set())}
+            style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#64748b', cursor: 'pointer', fontSize: 13 }}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Flagged notice */}
+      {tab === 'flagged' && (data?.total ?? 0) > 0 && (
+        <div style={{
+          marginBottom: 16, padding: '12px 18px', borderRadius: 10,
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+          color: '#fca5a5', fontSize: 13,
+        }}>
+          🚩 {data?.total} question{data?.total !== 1 ? 's' : ''} flagged by users for review.
+          Review each question, then edit or unflag it.
+        </div>
+      )}
+
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <th style={{ padding: '14px 16px', width: 40 }}>
+                <input type="checkbox"
+                  checked={data ? selected.size === data.questions.length && data.questions.length > 0 : false}
+                  onChange={selectAll}
+                  style={{ width: 15, height: 15, cursor: 'pointer' }}
+                />
+              </th>
+              {['Concept', 'Domain', 'Question Preview', 'Type', 'Difficulty', 'Attempts', 'Status', 'Actions'].map(h => (
+                <th key={h} style={{ padding: '14px 16px', textAlign: 'left', color: '#475569', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={9} style={{ padding: 48, textAlign: 'center', color: '#475569' }}>Loading…</td></tr>
+            ) : (data?.questions ?? []).length === 0 ? (
+              <tr><td colSpan={9} style={{ padding: 48, textAlign: 'center', color: '#475569' }}>
+                {tab === 'flagged' ? '🎉 No flagged questions!' : 'No questions found'}
+              </td></tr>
+            ) : (data?.questions ?? []).map(q => (
+              <tr key={q.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background 0.15s', background: q.isFlagged ? 'rgba(239,68,68,0.03)' : 'transparent' }}
+                onMouseEnter={e => (e.currentTarget.style.background = q.isFlagged ? 'rgba(239,68,68,0.05)' : 'rgba(255,255,255,0.025)')}
+                onMouseLeave={e => (e.currentTarget.style.background = q.isFlagged ? 'rgba(239,68,68,0.03)' : 'transparent')}
+              >
+                <td style={{ padding: '12px 16px' }}>
+                  <input type="checkbox" checked={selected.has(q.id)} onChange={() => toggleSelect(q.id)}
+                    style={{ width: 15, height: 15, cursor: 'pointer' }} />
+                </td>
+                <td style={{ padding: '12px 16px', color: '#e2e8f0', fontSize: 13, fontWeight: 600, maxWidth: 120 }}>
+                  {q.conceptName}
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc' }}>
+                    {q.domain}
+                  </span>
+                </td>
+                <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: 13, maxWidth: 260 }}>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.content}</div>
+                  {q.isFlagged && q.flagReason && (
+                    <div style={{ color: '#f87171', fontSize: 11, marginTop: 3 }}>🚩 {q.flagReason}</div>
+                  )}
+                </td>
+                <td style={{ padding: '12px 16px', color: '#64748b', fontSize: 12 }}>{q.questionType.replace('_', ' ')}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: DIFF_BG[q.difficulty], color: DIFF_COLORS[q.difficulty] }}>
+                    {q.difficulty}
+                  </span>
+                </td>
+                <td style={{ padding: '12px 16px', color: '#64748b', fontSize: 13 }}>{q._count.attempts}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {q.isFlagged && <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>🚩 Flagged</span>}
+                    <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: q.isActive ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)', color: q.isActive ? '#10b981' : '#64748b' }}>
+                      {q.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => handleEdit(q)}
+                      style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 12 }}>
+                      Edit
+                    </button>
+                    {q.isFlagged && (
+                      <button onClick={() => handleUnflag(q.id)}
+                        style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 12 }}>
+                        Unflag
+                      </button>
+                    )}
+                    <button onClick={() => handleToggleActive(q)}
+                      style={{
+                        background: q.isActive ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
+                        border: `1px solid ${q.isActive ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
+                        color: q.isActive ? '#ef4444' : '#10b981',
+                        borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 12,
+                      }}>
+                      {q.isActive ? 'Deactivate' : 'Reactivate'}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {data && data.totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20 }}>
+          {Array.from({ length: data.totalPages }, (_, i) => i + 1).map(p => (
+            <button key={p} onClick={() => setPage(p)}
+              style={{
+                padding: '8px 14px', borderRadius: 8, border: '1px solid',
+                borderColor: p === page ? '#6366f1' : 'rgba(255,255,255,0.1)',
+                background: p === page ? 'rgba(99,102,241,0.2)' : 'transparent',
+                color: p === page ? '#a5b4fc' : '#64748b', cursor: 'pointer', fontSize: 13,
+              }}>
+              {p}
+            </button>
+          ))}
         </div>
       )}
 
       {/* Edit Modal */}
       {editing && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 100,
-          background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div style={{
-            width: '90%', maxWidth: 640, borderRadius: 20,
-            background: '#0e0e24', border: '1px solid rgba(255,255,255,0.12)',
-            padding: '28px 32px',
-          }}>
-            <h2 style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 18, margin: '0 0 20px' }}>
-              ✏️ Edit Question — <span style={{ color: '#94a3b8', fontWeight: 400 }}>{editing.conceptName}</span>
-            </h2>
-
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
+          <div style={{ background: '#0d1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, padding: 32, width: 560, boxShadow: '0 24px 80px rgba(0,0,0,0.6)', animation: 'fadeUp 0.2s ease' }}>
+            <h3 style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 700, margin: '0 0 20px' }}>✏️ Edit Question</h3>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>QUESTION CONTENT</label>
+              <label style={{ color: '#64748b', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Concept: <span style={{ color: '#a5b4fc', textTransform: 'none' }}>{editing.conceptName}</span>
+              </label>
+              <label style={{ color: '#64748b', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Question Content</label>
               <textarea
-                value={editDraft.content ?? editing.content}
-                onChange={e => setEditDraft({ ...editDraft, content: e.target.value })}
-                rows={4}
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: 10,
-                  background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#e2e8f0', fontSize: 13, resize: 'vertical', boxSizing: 'border-box',
-                }}
+                value={editDraft.content ?? ''}
+                onChange={e => setEditDraft(d => ({ ...d, content: e.target.value }))}
+                rows={5}
+                style={{ width: '100%', padding: '12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', fontSize: 14, resize: 'vertical', outline: 'none', boxSizing: 'border-box', lineHeight: 1.6 }}
               />
             </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>DIFFICULTY</label>
-              <select
-                value={editDraft.difficulty ?? editing.difficulty}
-                onChange={e => setEditDraft({ ...editDraft, difficulty: e.target.value as any })}
-                style={{
-                  padding: '8px 12px', borderRadius: 8,
-                  background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#e2e8f0', fontSize: 13,
-                }}
-              >
-                <option value="EASY">EASY</option>
-                <option value="MEDIUM">MEDIUM</option>
-                <option value="HARD">HARD</option>
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24 }}>
-              <button onClick={() => setEditing(null)} style={{
-                padding: '10px 20px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
-                background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 13,
-              }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving} style={{
-                padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                color: '#fff', fontWeight: 700, fontSize: 13,
-              }}>{saving ? 'Saving…' : 'Save Changes'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ color: '#f1f5f9', fontWeight: 800, fontSize: 28, margin: 0 }}>❓ Question Moderation</h1>
-        <p style={{ color: '#64748b', fontSize: 14, marginTop: 6 }}>{data?.total ?? '—'} questions · Edit, deactivate, or change difficulty</p>
-      </div>
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-        <select
-          id="admin-q-domain"
-          value={domain}
-          onChange={e => { setDomain(e.target.value); setPage(1); }}
-          style={{
-            padding: '9px 14px', borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.1)',
-            background: 'rgba(255,255,255,0.04)', color: '#e2e8f0', fontSize: 13,
-          }}
-        >
-          <option value="">All Domains</option>
-          <option value="DSA">DSA</option>
-          <option value="SYSTEM_DESIGN">System Design</option>
-        </select>
-        <select
-          id="admin-q-difficulty"
-          value={difficulty}
-          onChange={e => { setDifficulty(e.target.value); setPage(1); }}
-          style={{
-            padding: '9px 14px', borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.1)',
-            background: 'rgba(255,255,255,0.04)', color: '#e2e8f0', fontSize: 13,
-          }}
-        >
-          <option value="">All Difficulties</option>
-          <option value="EASY">EASY</option>
-          <option value="MEDIUM">MEDIUM</option>
-          <option value="HARD">HARD</option>
-        </select>
-      </div>
-
-      {/* Table */}
-      <div style={{ borderRadius: 18, overflow: 'hidden', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-        {loading ? (
-          <div style={{ padding: 60, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid #6366f1', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-          </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                {['Concept / Question', 'Domain', 'Type', 'Difficulty', 'Attempts', 'Status', 'Actions'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '14px 16px', color: '#475569', fontWeight: 600, background: 'rgba(255,255,255,0.02)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.questions ?? []).map(q => (
-                <tr key={q.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', opacity: q.isActive ? 1 : 0.45 }}>
-                  <td style={{ padding: '12px 16px', maxWidth: 280 }}>
-                    <div style={{ color: '#a5b4fc', fontSize: 11, fontWeight: 700, marginBottom: 3 }}>{q.conceptName}</div>
-                    <div style={{ color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
-                      {q.content}
-                    </div>
-                  </td>
-                  <td style={{ padding: '12px 16px', color: '#94a3b8' }}>{q.domain === 'SYSTEM_DESIGN' ? 'SD' : q.domain}</td>
-                  <td style={{ padding: '12px 16px', color: '#64748b', fontSize: 11 }}>{q.questionType}</td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{
-                      padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                      color: DIFF_COLORS[q.difficulty], background: `${DIFF_COLORS[q.difficulty]}18`,
-                    }}>{q.difficulty}</span>
-                  </td>
-                  <td style={{ padding: '12px 16px', color: '#64748b' }}>{q._count.attempts}</td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{
-                      padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                      background: q.isActive ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
-                      color: q.isActive ? '#34d399' : '#f87171',
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ color: '#64748b', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Difficulty</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {(['EASY', 'MEDIUM', 'HARD'] as const).map(d => (
+                  <button key={d} onClick={() => setEditDraft(dr => ({ ...dr, difficulty: d }))}
+                    style={{
+                      flex: 1, padding: '10px', borderRadius: 10, border: `2px solid`,
+                      borderColor: editDraft.difficulty === d ? DIFF_COLORS[d] : 'rgba(255,255,255,0.08)',
+                      background: editDraft.difficulty === d ? DIFF_BG[d] : 'transparent',
+                      color: editDraft.difficulty === d ? DIFF_COLORS[d] : '#475569',
+                      cursor: 'pointer', fontWeight: 700, fontSize: 13, transition: 'all 0.15s',
                     }}>
-                      {q.isActive ? '● Active' : '○ Inactive'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        id={`edit-q-${q.id}`}
-                        onClick={() => { setEditing(q); setEditDraft({}); }}
-                        style={{
-                          padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                          background: 'rgba(99,102,241,0.15)', color: '#a5b4fc', fontSize: 11, fontWeight: 600,
-                        }}>Edit</button>
-                      {q.isActive ? (
-                        <button
-                          id={`deactivate-q-${q.id}`}
-                          onClick={() => handleDelete(q)}
-                          style={{
-                            padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                            background: 'rgba(239,68,68,0.12)', color: '#f87171', fontSize: 11, fontWeight: 600,
-                          }}>Deactivate</button>
-                      ) : (
-                        <button
-                          id={`reactivate-q-${q.id}`}
-                          onClick={() => handleReactivate(q)}
-                          style={{
-                            padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                            background: 'rgba(16,185,129,0.12)', color: '#34d399', fontSize: 11, fontWeight: 600,
-                          }}>Reactivate</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Pagination */}
-      {(data?.totalPages ?? 0) > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20 }}>
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: page === 1 ? '#475569' : '#a5b4fc', cursor: page === 1 ? 'not-allowed' : 'pointer', fontSize: 13 }}>← Prev</button>
-          <span style={{ padding: '8px 16px', color: '#64748b', fontSize: 13 }}>Page {page} of {data?.totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(data?.totalPages ?? 1, p + 1))} disabled={page === data?.totalPages}
-            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: page === data?.totalPages ? '#475569' : '#a5b4fc', cursor: page === data?.totalPages ? 'not-allowed' : 'pointer', fontSize: 13 }}>Next →</button>
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button onClick={() => setEditing(null)}
+                style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#64748b', cursor: 'pointer', fontWeight: 600 }}>
+                Cancel
+              </button>
+              <button onClick={handleSave} disabled={saving}
+                style={{ flex: 1, padding: '11px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 14, opacity: saving ? 0.7 : 1 }}>
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -71,7 +71,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Get the underlying ioredis client for advanced operations
+   * Get the underlying ioredis client for advanced operations client Redis
    */
   getClient(): Redis {
     return this.client;

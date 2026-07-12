@@ -210,4 +210,33 @@ export class GraphService {
       isSeeded: r.conceptCount > 0,
     };
   }
+
+  // ─── Admin Edge Editor ────────────────────────────────────────────────────
+
+  async addEdge(fromConceptId: string, toConceptId: string, type: 'REQUIRES' | 'LEADS_TO' = 'REQUIRES') {
+    const relType = type === 'REQUIRES' ? 'REQUIRES' : 'LEADS_TO';
+    const cypher = `
+      MATCH (a:Concept {id: $fromId})
+      MATCH (b:Concept {id: $toId})
+      MERGE (a)-[r:${relType}]->(b)
+      RETURN type(r) as relType, a.name as from, b.name as to
+    `;
+    const results = await this.neo4j.runQuery<{ relType: string; from: string; to: string }>(
+      cypher, { fromId: fromConceptId, toId: toConceptId }
+    );
+    if (!results.length) throw new NotFoundException('One or both concepts not found in graph');
+    return { success: true, edge: results[0] };
+  }
+
+  async removeEdge(fromConceptId: string, toConceptId: string) {
+    const cypher = `
+      MATCH (a:Concept {id: $fromId})-[r]->(b:Concept {id: $toId})
+      DELETE r
+      RETURN count(r) as deleted
+    `;
+    const results = await this.neo4j.runQuery<{ deleted: number }>(
+      cypher, { fromId: fromConceptId, toId: toConceptId }
+    );
+    return { success: true, deleted: results[0]?.deleted ?? 0 };
+  }
 }

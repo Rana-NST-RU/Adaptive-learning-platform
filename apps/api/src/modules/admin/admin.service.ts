@@ -208,11 +208,12 @@ export class AdminService {
 
   // ─── Question Moderation ───────────────────────────────────────────────────
 
-  async listQuestions(page = 1, limit = 20, domain?: string, difficulty?: string) {
+  async listQuestions(page = 1, limit = 20, domain?: string, difficulty?: string, isFlagged?: boolean) {
     const skip = (page - 1) * limit;
     const where: any = {};
     if (domain) where.domain = domain;
     if (difficulty) where.difficulty = difficulty;
+    if (isFlagged !== undefined) where.isFlagged = isFlagged;
 
     const [questions, total] = await Promise.all([
       this.prisma.question.findMany({
@@ -287,5 +288,48 @@ export class AdminService {
       avgMastery: Math.round((m._avg.masteryScore ?? 0) * 100),
       avgRetention: Math.round((m._avg.retentionScore ?? 0) * 100),
     }));
+  }
+
+  // ─── Concept Mastery & Audit Logs (Sprint 6 Additional) ───────────────────
+
+  async overrideMastery(userId: string, conceptId: string, masteryScore: number, actorId: string, actorName: string) {
+    const mastery = await this.prisma.conceptMastery.findUnique({
+      where: { userId_conceptId: { userId, conceptId } },
+    });
+    if (!mastery) throw new NotFoundException('Mastery record not found for user and concept');
+
+    const updated = await this.prisma.conceptMastery.update({
+      where: { userId_conceptId: { userId, conceptId } },
+      data: { masteryScore },
+    });
+
+    await this.prisma.adminAuditLog.create({
+      data: {
+        actorId,
+        actorName,
+        action: 'MASTERY_OVERRIDE',
+        targetType: 'MASTERY',
+        targetId: `${userId}:${conceptId}`,
+        targetName: mastery.conceptName,
+        before: { masteryScore: mastery.masteryScore },
+        after: { masteryScore },
+      },
+    });
+
+    return updated;
+  }
+
+  async getAuditLogs(page = 1, limit = 50) {
+    const skip = (page - 1) * limit;
+    const [logs, total] = await Promise.all([
+      this.prisma.adminAuditLog.findMany({
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.adminAuditLog.count(),
+    ]);
+
+    return { logs, total, page, totalPages: Math.ceil(total / limit) };
   }
 }

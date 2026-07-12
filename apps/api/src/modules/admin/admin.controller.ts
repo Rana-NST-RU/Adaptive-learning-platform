@@ -93,17 +93,20 @@ export class AdminController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'domain', required: false, enum: ['DSA', 'SYSTEM_DESIGN'] })
   @ApiQuery({ name: 'difficulty', required: false, enum: ['EASY', 'MEDIUM', 'HARD'] })
+  @ApiQuery({ name: 'isFlagged', required: false, type: Boolean })
   listQuestions(
     @Query('page') page?: number,
     @Query('limit') limit?: number,
     @Query('domain') domain?: string,
     @Query('difficulty') difficulty?: string,
+    @Query('isFlagged') isFlagged?: string,
   ) {
     return this.adminService.listQuestions(
       page ? Number(page) : 1,
       limit ? Number(limit) : 20,
       domain,
       difficulty,
+      isFlagged ? isFlagged === 'true' : undefined,
     );
   }
 
@@ -128,5 +131,33 @@ export class AdminController {
   @ApiOperation({ summary: 'Soft-delete (deactivate) a question' })
   deleteQuestion(@Param('id') id: string) {
     return this.adminService.deleteQuestion(id);
+  }
+
+  // ─── Concept Mastery & Audit Logs (Sprint 6 Additional) ───────────────────
+
+  @Patch('mastery/:userId/:conceptId')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Override a user\'s concept mastery score (ADMIN only)' })
+  overrideMastery(
+    @Param('userId') userId: string,
+    @Param('conceptId') conceptId: string,
+    @Body('masteryScore') masteryScore: number,
+    @Request() req: any,
+  ) {
+    const actorId = req.user.sub;
+    const actorName = req.user.name || 'Admin';
+    return this.adminService.overrideMastery(userId, conceptId, masteryScore, actorId, actorName);
+  }
+
+  @Get('audit-logs')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'List admin action audit logs (ADMIN only)' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  getAuditLogs(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.adminService.getAuditLogs(page ? Number(page) : 1, limit ? Number(limit) : 50);
   }
 }
