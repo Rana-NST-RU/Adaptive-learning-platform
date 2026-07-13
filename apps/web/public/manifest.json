@@ -1,0 +1,42 @@
+{
+  "name": "ALOS — Adaptive Learning OS",
+  "short_name": "ALOS",
+  "description": "AI-powered adaptive learning for DSA & System Design mastery",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060614",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Practice Today",
+      "short_name": "Practice",
+      "description": "Jump to today's practice session",
+      "url": "/dashboard/practice",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Today's Plan",
+      "short_name": "Plan",
+      "description": "View today's learning plan",
+      "url": "/dashboard/today",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "lang": "en"
+}

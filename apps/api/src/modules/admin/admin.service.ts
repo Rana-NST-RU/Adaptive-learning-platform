@@ -8,10 +8,14 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsGateway,
+  ) {}
 
   // ─── Platform Analytics ────────────────────────────────────────────────────
 
@@ -314,6 +318,15 @@ export class AdminService {
         before: { masteryScore: mastery.masteryScore },
         after: { masteryScore },
       },
+    });
+
+    // Real-time notification to the affected student
+    await this.notifications.sendToUser(userId, 'mastery_override', {
+      conceptId,
+      conceptName: mastery.conceptName,
+      previousScore: Math.round(mastery.masteryScore * 100),
+      newScore: Math.round(masteryScore * 100),
+      overriddenBy: actorName,
     });
 
     return updated;

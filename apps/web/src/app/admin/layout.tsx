@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/api-client';
@@ -19,6 +19,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const [adminName, setAdminName] = useState('Admin');
   const [checking, setChecking] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile on mount + resize
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setSidebarOpen(false);
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // Close on mobile route change
+  const closeOnMobile = useCallback(() => {
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+  useEffect(() => { closeOnMobile(); }, [pathname, closeOnMobile]);
 
   useEffect(() => {
     const verify = async () => {
@@ -57,6 +77,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         minHeight: '100vh', background: '#060614',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <div style={{
           width: 40, height: 40, borderRadius: '50%',
           border: '3px solid #6366f1', borderTopColor: 'transparent',
@@ -68,14 +89,49 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div style={{ minHeight: '100vh', background: '#060614', display: 'flex' }}>
+
+      {/* Mobile hamburger */}
+      {isMobile && !sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          style={{
+            position: 'fixed', top: 16, left: 16, zIndex: 50,
+            width: 40, height: 40, borderRadius: 10,
+            background: 'rgba(220,38,38,0.15)',
+            border: '1px solid rgba(220,38,38,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: '#f87171',
+          }}
+        >
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      )}
+
+      {/* Mobile backdrop */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 29,
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+          }}
+        />
+      )}
+
       {/* Sidebar */}
       <aside style={{
         width: 240, flexShrink: 0, position: 'fixed', top: 0, left: 0,
         height: '100vh', zIndex: 30,
-        background: 'rgba(255,255,255,0.03)',
+        background: 'rgba(6,6,20,0.97)',
         borderRight: '1px solid rgba(255,255,255,0.07)',
         backdropFilter: 'blur(20px)',
         display: 'flex', flexDirection: 'column',
+        transform: isMobile
+          ? sidebarOpen ? 'translateX(0)' : 'translateX(-100%)'
+          : 'translateX(0)',
+        transition: 'transform 0.3s ease',
       }}>
         {/* Logo */}
         <div style={{
@@ -92,6 +148,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div style={{ color: '#f1f5f9', fontWeight: 800, fontSize: 15 }}>ALOS Admin</div>
             <div style={{ color: '#64748b', fontSize: 11 }}>Control Panel</div>
           </div>
+          {/* Close button (visible on all screen sizes) */}
+          <button
+            onClick={() => setSidebarOpen(false)}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#475569', fontSize: 18, padding: 4 }}
+          >✕</button>
         </div>
 
         {/* Nav */}
@@ -146,7 +207,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main content */}
-      <main style={{ marginLeft: 240, flex: 1, minHeight: '100vh' }}>
+      <main style={{
+        marginLeft: isMobile ? 0 : 240,
+        flex: 1, minHeight: '100vh',
+        paddingTop: isMobile && !sidebarOpen ? 56 : undefined,
+        transition: 'margin 0.3s ease',
+      }}>
         {children}
       </main>
     </div>

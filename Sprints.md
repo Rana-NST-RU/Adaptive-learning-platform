@@ -108,11 +108,23 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## 🚀 Sprint 7: Polish, Notifications & Deployment
+## ✅ Sprint 7: Polish, Notifications & Deployment — COMPLETE
 **Goal:** Prepare the platform for production traffic, real-time features, and final optimizations.
 
+> **Delivered:**
+> - **WebSockets** — `NotificationsGateway` on `/notifications` namespace. JWT-authenticated, userId→socketId in Redis. Events: `level_up` (on mastery tier change), `streak_warning` (daily 8PM cron), `mastery_override` (admin overrides a student's mastery score in real time).
+> - **Cron Jobs** — `@nestjs/schedule` powers daily 8PM streak-warning job. Finds all at-risk users and pushes socket events.
+> - **Rate limiting** — `@nestjs/throttler` (100 req/60s), Helmet, compression already wired in `main.ts`.
+> - **Mobile PWA** — Both dashboard and admin layouts have overlay sidebar, hamburger button, and backdrop tap-to-close on mobile.
+> - **Service Worker** — Cache-first for static/JS chunks, network-first for API calls, offline fallback to `/offline` page. Registered globally via `ServiceWorkerRegistrar` client component.
+> - **PWA Manifest** — `manifest.json` with icons (192/512), theme color, shortcuts to Practice & Today's Plan.
+> - **Health endpoint** — `GET /api/health` returns `{ status, timestamp, uptime }` (no auth, used by Docker HEALTHCHECK).
+> - **CI/CD** — `.github/workflows/ci.yml` runs lint → type-check → build on every push/PR to `main`.
+> - **Docker** — Multi-stage `Dockerfile` for NestJS API with `dumb-init`, healthcheck, production-only deps. `.dockerignore` and `.env.production.example`.
+> - **Deployment** — Next.js targets Vercel (zero-config). NestJS targets Railway/Cloud Run (Dockerfile ready).
+
 - **Backend:**
-  - WebSockets (`@nestjs/websockets`) for real-time notifications (e.g., "You lost your streak!").
+  - WebSockets (`@nestjs/websockets`) for real-time notifications.
   - Email/SMS integrations for daily reminders (Cron jobs via `@nestjs/schedule`).
   - Rate limiting (`@nestjs/throttler`), Helmet, and performance optimizations.
 - **Frontend:**
@@ -122,6 +134,7 @@ This document outlines the end-to-end development process for the Adaptive Learn
   - Setup CI/CD pipelines (GitHub Actions).
   - Deploy NestJS to a managed container service (e.g., Google Cloud Run, AWS ECS, or Railway).
   - Deploy Next.js to Vercel.
+
 
 ---
 

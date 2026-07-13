@@ -1,0 +1,75 @@
+name: CI — Lint, Type-check & Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Node.js setup ───────────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── Install dependencies ─────────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Generate Prisma client ───────────────────────────────────────────────
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+
+      # ── Lint ─────────────────────────────────────────────────────────────────
+      # Run ESLint on both workspaces (non-blocking warnings, blocking errors)
+      - name: Lint — API
+        run: npx eslint "apps/api/src/**/*.ts" --max-warnings=20
+        continue-on-error: false
+
+      - name: Lint — Web
+        run: npx next lint --dir apps/web/src
+        working-directory: apps/web
+        continue-on-error: false
+
+      # ── Type-check ───────────────────────────────────────────────────────────
+      - name: Type-check — API
+        run: npx tsc --noEmit
+        working-directory: apps/api
+
+      - name: Type-check — Web
+        run: npx tsc --noEmit
+        working-directory: apps/web
+
+      # ── Build ────────────────────────────────────────────────────────────────
+      - name: Build — API (NestJS)
+        run: npm run build --workspace=apps/api
+        env:
+          # Dummy env vars so config validation passes during build
+          DATABASE_URL: 'postgresql://user:pass@localhost:5432/alos'
+          JWT_SECRET: 'ci-build-secret'
+          REDIS_URL: 'redis://localhost:6379'
+          NEO4J_URI: 'bolt://localhost:7687'
+          NEO4J_USER: 'neo4j'
+          NEO4J_PASSWORD: 'ci-password'
+
+      - name: Build — Web (Next.js)
+        run: npm run build --workspace=apps/web
+        env:
+          NEXT_PUBLIC_API_URL: 'http://localhost:3001/api'
+          SKIP_ENV_VALIDATION: 'true'
+
+      # ── Summary ─────────────────────────────────────────────────────────────
+      - name: CI complete ✅
+        run: echo "All checks passed!"

@@ -85,7 +85,7 @@ export class QuestionsController {
     @Request() req: any,
     @Body() dto: SubmitAttemptDto,
   ): Promise<AttemptResultDto> {
-    return this.questionsService.submitAttempt(req.user?.id ?? null, dto);
+    return this.questionsService.submitAttempt(req.user?.sub ?? null, dto);
   }
 
   // ─── GET /questions/attempts/me ───────────────────────────────────────────
@@ -99,7 +99,7 @@ export class QuestionsController {
     @Request() req: any,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.questionsService.getMyAttempts(req.user.id, limit);
+    return this.questionsService.getMyAttempts(req.user.sub, limit);
   }
 
   // ─── GET /questions/mastery ───────────────────────────────────────────────
@@ -113,9 +113,9 @@ export class QuestionsController {
     @Request() req: any,
     @Query('conceptIds') conceptIds: string,
   ) {
-    if (!req.user?.id || !conceptIds) return {};
+    if (!req.user?.sub || !conceptIds) return {};
     const ids = conceptIds.split(',').filter(Boolean);
-    return this.questionsService.getMasteryForConcepts(req.user.id, ids);
+    return this.questionsService.getMasteryForConcepts(req.user.sub, ids);
   }
  
   // ─── POST /questions/:id/flag ──────────────────────────────────────────────
@@ -129,7 +129,7 @@ export class QuestionsController {
     @Param('id') id: string,
     @Body('reason') reason: string,
   ) {
-    return this.questionsService.flagQuestion(id, req.user.id, reason);
+    return this.questionsService.flagQuestion(id, req.user.sub, reason);
   }
 
   // ─── GET /questions/:id ──────────────────────────────────────────────────

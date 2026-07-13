@@ -3,9 +3,10 @@ import { QuestionsController } from './questions.controller';
 import { QuestionsService } from './questions.service';
 import { LlmModule } from '../llm/llm.module';
 import { TrackerModule } from '../learning-tracker/tracker.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [LlmModule, TrackerModule],
+  imports: [LlmModule, TrackerModule, NotificationsModule],
   controllers: [QuestionsController],
   providers: [QuestionsService],
   exports: [QuestionsService],

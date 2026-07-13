@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { adminApi } from '@/lib/api-client';
+import { adminApi, questionsApi, graphApi } from '@/lib/api-client';
 
 interface AdminQuestion {
   id: string;
@@ -27,6 +27,8 @@ interface QuestionsResponse {
 const DIFF_COLORS = { EASY: '#10b981', MEDIUM: '#f59e0b', HARD: '#ef4444' };
 const DIFF_BG = { EASY: 'rgba(16,185,129,0.1)', MEDIUM: 'rgba(245,158,11,0.1)', HARD: 'rgba(239,68,68,0.1)' };
 
+interface Topic { topicId: string; topicName: string; domain: string; conceptCount: number }
+
 export default function AdminQuestionsPage() {
   const [data, setData] = useState<QuestionsResponse | null>(null);
   const [page, setPage] = useState(1);
@@ -42,6 +44,14 @@ export default function AdminQuestionsPage() {
   // Bulk
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+
+  // Generate modal
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [genConceptId, setGenConceptId] = useState('');
+  const [genDifficulty, setGenDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD'>('MEDIUM');
+  const [genCount, setGenCount] = useState(5);
+  const [genLoading, setGenLoading] = useState(false);
 
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -67,6 +77,38 @@ export default function AdminQuestionsPage() {
   }, [page, domain, difficulty, tab]);
 
   useEffect(() => { fetchQuestions(); }, [fetchQuestions]);
+
+  // Load topics for generate dropdown
+  const openGenerateModal = async () => {
+    setShowGenerate(true);
+    if (topics.length) return;
+    try {
+      const [dsa, sd] = await Promise.all([
+        graphApi.getTopics('DSA'),
+        graphApi.getTopics('SYSTEM_DESIGN'),
+      ]);
+      const all = [...((dsa.data as { topics: Topic[] }).topics ?? []), ...((sd.data as { topics: Topic[] }).topics ?? [])];
+      setTopics(all);
+      if (all.length) setGenConceptId(all[0].topicId);
+    } catch { /* silent */ }
+  };
+
+  const handleGenerate = async () => {
+    if (!genConceptId) return showToast('Select a concept', false);
+    setGenLoading(true);
+    try {
+      const res = await questionsApi.generate({
+        conceptId: genConceptId,
+        difficulty: genDifficulty,
+        count: genCount,
+      });
+      const generated = (res.data as unknown[]).length;
+      showToast(`✨ Generated ${generated} new question${generated !== 1 ? 's' : ''}!`);
+      setShowGenerate(false);
+      fetchQuestions();
+    } catch { showToast('Generation failed — check Groq quota', false); }
+    finally { setGenLoading(false); }
+  };
 
   const handleEdit = (q: AdminQuestion) => {
     setEditing(q);
@@ -143,6 +185,7 @@ export default function AdminQuestionsPage() {
     <div style={{ padding: '32px 40px', maxWidth: 1400, margin: '0 auto' }}>
       <style>{`
         @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
 
       {toast && (
@@ -157,9 +200,25 @@ export default function AdminQuestionsPage() {
         </div>
       )}
 
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: '#f1f5f9', margin: 0 }}>📋 Question Moderation</h1>
-        <p style={{ color: '#64748b', margin: '6px 0 0', fontSize: 14 }}>{data?.total ?? 0} questions</p>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: '#f1f5f9', margin: 0 }}>📋 Question Moderation</h1>
+          <p style={{ color: '#64748b', margin: '6px 0 0', fontSize: 14 }}>{data?.total ?? 0} questions in bank</p>
+        </div>
+        <button onClick={openGenerateModal}
+          style={{
+            padding: '11px 22px', borderRadius: 12, border: 'none',
+            background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+            color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 8,
+            boxShadow: '0 4px 20px rgba(99,102,241,0.35)',
+            transition: 'transform 0.15s, box-shadow 0.15s',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 28px rgba(99,102,241,0.45)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 20px rgba(99,102,241,0.35)'; }}
+        >
+          ⚡ Generate via AI
+        </button>
       </div>
 
       {/* Tabs + Filters */}
@@ -388,6 +447,92 @@ export default function AdminQuestionsPage() {
               <button onClick={handleSave} disabled={saving}
                 style={{ flex: 1, padding: '11px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 14, opacity: saving ? 0.7 : 1 }}>
                 {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generate Modal */}
+      {showGenerate && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowGenerate(false); }}
+        >
+          <div style={{ background: '#0d1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 36, width: 540, boxShadow: '0 24px 80px rgba(0,0,0,0.7)', animation: 'fadeUp 0.2s ease' }}>
+            {/* Header */}
+            <div style={{ marginBottom: 28 }}>
+              <h3 style={{ color: '#f1f5f9', fontSize: 20, fontWeight: 700, margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 24 }}>⚡</span> AI Question Generator
+              </h3>
+              <p style={{ color: '#475569', fontSize: 13, margin: 0 }}>Use Groq LLM to generate new practice questions for any concept.</p>
+            </div>
+
+            {/* Concept */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ color: '#64748b', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Concept / Topic</label>
+              <select value={genConceptId} onChange={e => setGenConceptId(e.target.value)}
+                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: '#0a0e1a', color: '#e2e8f0', fontSize: 14, outline: 'none' }}>
+                {topics.length === 0 && <option value="">Loading topics…</option>}
+                {topics.map(t => (
+                  <option key={t.topicId} value={t.topicId}>{t.topicName} ({t.domain})</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Difficulty */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ color: '#64748b', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Difficulty</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {(['EASY', 'MEDIUM', 'HARD'] as const).map(d => (
+                  <button key={d} onClick={() => setGenDifficulty(d)}
+                    style={{
+                      flex: 1, padding: '10px', borderRadius: 10, border: '2px solid',
+                      borderColor: genDifficulty === d ? DIFF_COLORS[d] : 'rgba(255,255,255,0.08)',
+                      background: genDifficulty === d ? DIFF_BG[d] : 'transparent',
+                      color: genDifficulty === d ? DIFF_COLORS[d] : '#475569',
+                      cursor: 'pointer', fontWeight: 700, fontSize: 13, transition: 'all 0.15s',
+                    }}>
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Count */}
+            <div style={{ marginBottom: 28 }}>
+              <label style={{ color: '#64748b', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Number of Questions: <span style={{ color: '#a5b4fc' }}>{genCount}</span>
+              </label>
+              <input type="range" min={1} max={10} value={genCount} onChange={e => setGenCount(Number(e.target.value))}
+                style={{ width: '100%', accentColor: '#6366f1' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569', fontSize: 11, marginTop: 4 }}>
+                <span>1</span><span>5</span><span>10</span>
+              </div>
+            </div>
+
+            {/* Info banner */}
+            <div style={{ marginBottom: 24, padding: '10px 16px', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: 10, fontSize: 12, color: '#a78bfa' }}>
+              ⏱ Generation typically takes 5–15 seconds. Rate-limited to 5 calls / 60s.
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button onClick={() => setShowGenerate(false)}
+                style={{ flex: 1, padding: '12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#64748b', cursor: 'pointer', fontWeight: 600, fontSize: 14 }}>
+                Cancel
+              </button>
+              <button onClick={handleGenerate} disabled={genLoading || !genConceptId}
+                style={{
+                  flex: 2, padding: '12px', borderRadius: 10, border: 'none',
+                  background: genLoading || !genConceptId ? 'rgba(99,102,241,0.3)' : 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                  color: '#fff', cursor: genLoading || !genConceptId ? 'not-allowed' : 'pointer',
+                  fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}>
+                {genLoading ? (
+                  <><span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #fff4', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />Generating {genCount} questions…</>
+                ) : (
+                  <>⚡ Generate {genCount} Question{genCount !== 1 ? 's' : ''}</>
+                )}
               </button>
             </div>
           </div>

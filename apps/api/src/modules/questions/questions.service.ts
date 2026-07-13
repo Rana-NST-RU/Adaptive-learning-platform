@@ -13,6 +13,7 @@ import { Difficulty, Domain, QuestionType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { TrackerService } from '../learning-tracker/tracker.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import {
   GenerateQuestionsDto,
   GetQuestionsDto,
@@ -36,6 +37,7 @@ export class QuestionsService {
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
     private readonly tracker: TrackerService,
+    private readonly notifications: NotificationsGateway,
   ) {}
 
   // ─── Generate Questions via LLM ───────────────────────────────────────────
@@ -245,11 +247,28 @@ export class QuestionsService {
       }).catch((err) => this.logger.warn(`[LearningEvent] failed to create: ${err}`));
 
       // Award XP with streak multiplier
+      this.logger.log(`[XP] userId=${userId} baseXP=${baseXP} multiplier=${xpMultiplier} xpWithBonus=${xpWithBonus} isCorrect=${isCorrect}`);
       if (xpWithBonus > 0) {
-        await this.prisma.userProfile.updateMany({
+        const result = await this.prisma.userProfile.upsert({
           where: { userId },
-          data: { totalXP: { increment: xpWithBonus } },
+          update: { totalXP: { increment: xpWithBonus } },
+          create: { userId, totalXP: xpWithBonus },
         });
+        this.logger.log(`[XP] Awarded ${xpWithBonus} XP → totalXP now ${result.totalXP}`);
+      }
+
+      // Emit level_up WebSocket event if masteryLevel increased (fire-and-forget)
+      if (
+        prevMasteryLevel !== undefined &&
+        newMasteryLevel !== undefined &&
+        newMasteryLevel !== prevMasteryLevel
+      ) {
+        this.notifications.sendToUser(userId, 'level_up', {
+          conceptName: question.conceptName,
+          prevLevel: prevMasteryLevel,
+          newLevel: newMasteryLevel,
+          xpEarned: xpWithBonus,
+        }).catch(() => {});
       }
 
       return {

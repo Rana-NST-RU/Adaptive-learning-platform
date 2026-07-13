@@ -47,10 +47,10 @@ export class TrackerController {
   @ApiOperation({ summary: 'Live dashboard stats — XP, streak (+ multiplier), mastery counts, accuracy' })
   async getDashboardStats(@Request() req: any) {
     // Passively detect and apply streak breaks on every dashboard load
-    this.tracker.checkAndBreakStreak(req.user.id).catch(() => {});
+    this.tracker.checkAndBreakStreak(req.user.sub).catch(() => {});
     const [stats, dueCount] = await Promise.all([
-      this.tracker.getDashboardStats(req.user.id),
-      this.tracker.getDueConceptCount(req.user.id),
+      this.tracker.getDashboardStats(req.user.sub),
+      this.tracker.getDueConceptCount(req.user.sub),
     ]);
     return { ...stats, dueConceptCount: dueCount };
   }
@@ -60,7 +60,7 @@ export class TrackerController {
   @Get('streak')
   @ApiOperation({ summary: 'Current streak info with freeze count and XP multiplier' })
   getStreakInfo(@Request() req: any) {
-    return this.tracker.getStreakInfo(req.user.id);
+    return this.tracker.getStreakInfo(req.user.sub);
   }
 
   // ─── GET /tracker/recommendations ────────────────────────────────────────
@@ -72,7 +72,7 @@ export class TrackerController {
     @Request() req: any,
     @Query('domain') domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
   ) {
-    return this.tracker.generateRecommendations(req.user.id, domain);
+    return this.tracker.generateRecommendations(req.user.sub, domain);
   }
 
   // ─── GET /tracker/mastery ─────────────────────────────────────────────────
@@ -84,7 +84,7 @@ export class TrackerController {
     @Request() req: any,
     @Query('domain') domain?: 'DSA' | 'SYSTEM_DESIGN',
   ) {
-    return this.tracker.getMasteryOverview(req.user.id, domain);
+    return this.tracker.getMasteryOverview(req.user.sub, domain);
   }
 
   // ─── GET /tracker/plan ────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ export class TrackerController {
     @Request() req: any,
     @Query('domain') domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
   ) {
-    return this.tracker.getDailyPlan(req.user.id, domain);
+    return this.tracker.getDailyPlan(req.user.sub, domain);
   }
 
   // ─── GET /tracker/due-concepts ────────────────────────────────────────────
@@ -108,7 +108,7 @@ export class TrackerController {
     @Request() req: any,
     @Query('domain') domain?: 'DSA' | 'SYSTEM_DESIGN',
   ) {
-    return this.tracker.getDueConcepts(req.user.id, domain);
+    return this.tracker.getDueConcepts(req.user.sub, domain);
   }
 
   // ─── GET /tracker/insights ────────────────────────────────────────────────
@@ -116,7 +116,7 @@ export class TrackerController {
   @Get('insights')
   @ApiOperation({ summary: 'Learning insights — optimal study hours, best day-of-week' })
   getInsights(@Request() req: any) {
-    return this.tracker.getInsights(req.user.id);
+    return this.tracker.getInsights(req.user.sub);
   }
 
   // ─── POST /tracker/rate-confidence ───────────────────────────────────────
@@ -137,7 +137,7 @@ export class TrackerController {
     if (!dto.attemptId || dto.grade < 1 || dto.grade > 4) {
       throw new BadRequestException('Invalid attemptId or grade (must be 1-4)');
     }
-    return this.tracker.rateConfidence(req.user.id, dto.attemptId, dto.grade);
+    return this.tracker.rateConfidence(req.user.sub, dto.attemptId, dto.grade);
   }
 
   // ─── GET /tracker/heatmap ─────────────────────────────────────────────────
@@ -145,7 +145,7 @@ export class TrackerController {
   @Get('heatmap')
   @ApiOperation({ summary: 'Activity heatmap — daily attempt counts for past 365 days' })
   getHeatmap(@Request() req: any) {
-    return this.tracker.getActivityHeatmap(req.user.id);
+    return this.tracker.getActivityHeatmap(req.user.sub);
   }
 
   // ─── GET /tracker/forecast ────────────────────────────────────────────────
@@ -153,7 +153,7 @@ export class TrackerController {
   @Get('forecast')
   @ApiOperation({ summary: '30-day FSRS review load forecast — how many reviews are due per day' })
   getForecast(@Request() req: any) {
-    return this.tracker.getForecast(req.user.id);
+    return this.tracker.getForecast(req.user.sub);
   }
 
   // ─── GET /tracker/fading-soon ─────────────────────────────────────────────
@@ -167,7 +167,7 @@ export class TrackerController {
     @Query('domain') domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
     @Query('windowHours') windowHours?: string,
   ) {
-    return this.tracker.getFadingSoon(req.user.id, domain, windowHours ? parseInt(windowHours) : 72);
+    return this.tracker.getFadingSoon(req.user.sub, domain, windowHours ? parseInt(windowHours) : 72);
   }
 
   // ─── GET /tracker/weekly ──────────────────────────────────────────────────
@@ -175,7 +175,7 @@ export class TrackerController {
   @Get('weekly')
   @ApiOperation({ summary: 'Weekly digest — stats for the past 7 days' })
   getWeeklyDigest(@Request() req: any) {
-    return this.tracker.getWeeklyDigest(req.user.id);
+    return this.tracker.getWeeklyDigest(req.user.sub);
   }
 
   // ─── GET /tracker/achievements ────────────────────────────────────────────
@@ -183,7 +183,7 @@ export class TrackerController {
   @Get('achievements')
   @ApiOperation({ summary: 'All achievements with unlock status and timestamp' })
   getAchievements(@Request() req: any) {
-    return this.tracker.getAchievements(req.user.id);
+    return this.tracker.getAchievements(req.user.sub);
   }
 
   // ─── POST /tracker/seed-assessment ───────────────────────────────────────
@@ -202,7 +202,7 @@ export class TrackerController {
     if (!conceptId || rating < 1 || rating > 5) {
       throw new BadRequestException('conceptId required; rating must be 1-5');
     }
-    return this.tracker.seedSelfAssessment(req.user.id, conceptId, conceptName, domain, rating);
+    return this.tracker.seedSelfAssessment(req.user.sub, conceptId, conceptName, domain, rating);
   }
 }
 

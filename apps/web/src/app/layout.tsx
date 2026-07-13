@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import NotificationToaster from '@/components/NotificationToaster';
+import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -27,7 +29,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className={`${inter.className} antialiased`}>{children}</body>
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#6366f1" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      </head>
+      <body className={`${inter.className} antialiased`}>
+        {children}
+        <NotificationToaster />
+        <ServiceWorkerRegistrar />
+      </body>
     </html>
   );
 }

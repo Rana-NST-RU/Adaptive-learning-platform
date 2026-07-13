@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/api-client';
@@ -18,6 +18,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile on mount and resize
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setSidebarOpen(false);
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // Close sidebar on route change on mobile
+  const closeOnMobile = useCallback(() => {
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+
+  useEffect(() => { closeOnMobile(); }, [pathname, closeOnMobile]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -64,13 +84,46 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-[#060614] flex">
+
+      {/* Mobile hamburger button — fixed, only visible when sidebar is closed on mobile */}
+      {isMobile && !sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          style={{
+            position: 'fixed', top: 16, left: 16, zIndex: 50,
+            width: 40, height: 40, borderRadius: 10,
+            background: 'rgba(99,102,241,0.15)',
+            border: '1px solid rgba(99,102,241,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: '#a5b4fc',
+          }}
+        >
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      )}
+
+      {/* Mobile backdrop overlay */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 29,
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+          }}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
         className={`fixed top-0 left-0 h-full z-30 transition-all duration-300 ${
-          sidebarOpen ? 'w-64' : 'w-16'
+          isMobile
+            ? sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64'
+            : sidebarOpen ? 'w-64' : 'w-16'
         }`}
         style={{
-          background: 'rgba(255,255,255,0.03)',
+          background: 'rgba(6,6,20,0.97)',
           borderRight: '1px solid rgba(255,255,255,0.07)',
           backdropFilter: 'blur(20px)',
         }}
@@ -181,8 +234,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main content */}
       <main
         className={`flex-1 transition-all duration-300 min-h-screen ${
-          sidebarOpen ? 'ml-64' : 'ml-16'
+          isMobile ? 'ml-0' : sidebarOpen ? 'ml-64' : 'ml-16'
         }`}
+        style={{ paddingTop: isMobile && !sidebarOpen ? 56 : undefined }}
       >
         {children}
       </main>
