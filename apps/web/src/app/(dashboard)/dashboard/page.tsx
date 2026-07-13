@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { trackerApi } from '@/lib/api-client';
 import type { DashboardStats, Recommendation, HeatmapDay, FadingSoonItem, LearningInsights } from '@/lib/api-client';
@@ -210,28 +210,36 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
+  // ── Stats fetcher (called on mount + whenever tab regains focus) ────────────
+  const fetchStats = useCallback(() => {
     setStatsLoading(true);
     trackerApi.getStats()
       .then(r => setStats(r.data))
       .catch(() => {})
       .finally(() => setStatsLoading(false));
-    // Fetch daily plan (for mini widget)
     trackerApi.getDailyPlan('DSA')
       .then(r => setPlan(r.data))
       .catch(() => {});
-    // Fetch heatmap + fading-soon in parallel
     trackerApi.getHeatmap()
       .then(r => setHeatmap(r.data))
       .catch(() => {});
     trackerApi.getFadingSoon(domain)
       .then(r => setFadingSoon(r.data))
       .catch(() => {});
-    // Fetch learning insights for optimal window badge
     trackerApi.getInsights()
       .then(r => setInsights(r.data))
       .catch(() => {});
-  }, []);
+  }, [domain]);
+
+  useEffect(() => {
+    fetchStats();
+    // Re-fetch XP/stats when the user returns from practice (tab becomes visible)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchStats();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [fetchStats]);
 
   useEffect(() => {
     setRecsLoading(true);

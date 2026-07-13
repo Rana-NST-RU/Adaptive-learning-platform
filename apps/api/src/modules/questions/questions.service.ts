@@ -100,7 +100,8 @@ export class QuestionsService {
   async getQuestions(dto: GetQuestionsDto): Promise<QuestionResponseDto[]> {
     const { conceptId, difficulty, domain, questionType, limit = 5 } = dto;
 
-    const questions = await this.prisma.question.findMany({
+    // Fetch a wide candidate pool so we can shuffle — prevents same questions every session
+    const pool = await this.prisma.question.findMany({
       where: {
         isActive: true,
         ...(conceptId && { conceptId }),
@@ -108,11 +109,17 @@ export class QuestionsService {
         ...(domain && { domain }),
         ...(questionType && { questionType }),
       },
-      take: limit,
-      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit * 6, 60), // up to 60-question pool
+      orderBy: { id: 'asc' },
     });
 
-    return questions.map(this.toResponseDto);
+    // Fisher-Yates shuffle for true randomness each session
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+
+    return pool.slice(0, limit).map(this.toResponseDto);
   }
 
   async getQuestionById(id: string): Promise<QuestionResponseDto> {
@@ -353,17 +360,34 @@ export class QuestionsService {
       return correct === given;
     }
     if (question.questionType === 'SHORT_ANSWER') {
-      // Fuzzy word-overlap (Jaccard ≥ 0.3 counts as correct)
-      return this.wordOverlapScore(correct, given) >= 0.3;
+      // Two-pass check: Jaccard on meaningful words OR key-term coverage
+      const jaccard = this.wordOverlapScore(correct, given);
+      if (jaccard >= 0.25) return true;
+      // Key-term check: ≥50% of non-trivial expected words appear in user answer
+      const keyTermCoverage = this.keyTermCoverage(correct, given);
+      return keyTermCoverage >= 0.5;
     }
-    // CODE_SNIPPET — exact or contains (code needs to be more precise)
+    // CODE_SNIPPET — exact or contains
     return correct === given || correct.includes(given) || given.includes(correct);
   }
 
+  /** Stop words stripped before Jaccard — prevents common words from skewing score */
+  private static readonly STOP_WORDS = new Set([
+    'a','an','the','is','are','was','were','be','been','being',
+    'have','has','had','do','does','did','will','would','could',
+    'should','may','might','shall','can','need','dare','used',
+    'in','on','at','to','for','of','with','by','from','as',
+    'into','through','during','before','after','above','below',
+    'between','out','off','over','under','this','that','these',
+    'those','it','its','and','or','but','if','so','yet','both',
+    'not','no','nor','than','then','when','where','which','who',
+    'what','how','all','each','every','both','few','more','most',
+    'other','some','such','any','only','same','than','too','very',
+  ]);
+
   /**
-   * Compute Jaccard similarity between two strings:
-   * |intersection(words_a, words_b)| / |union(words_a, words_b)|
-   * Returns 0.0–1.0. Used for SHORT_ANSWER fuzzy matching.
+   * Compute Jaccard similarity between two strings after stripping stop words.
+   * Returns 0.0–1.0.
    */
   private wordOverlapScore(a: string, b: string): number {
     const tokenize = (s: string) =>
@@ -371,13 +395,31 @@ export class QuestionsService {
         s.toLowerCase()
           .replace(/[^a-z0-9\s]/g, ' ')
           .split(/\s+/)
-          .filter(Boolean),
+          .filter(w => w.length > 1 && !QuestionsService.STOP_WORDS.has(w)),
       );
     const setA = tokenize(a);
     const setB = tokenize(b);
-    const intersection = [...setA].filter((w) => setB.has(w)).length;
+    if (setA.size === 0 && setB.size === 0) return 1;
+    const intersection = [...setA].filter(w => setB.has(w)).length;
     const union = new Set([...setA, ...setB]).size;
     return union === 0 ? 0 : intersection / union;
+  }
+
+  /**
+   * Key-term coverage: what fraction of meaningful words in `expected`
+   * appear in `given`? Useful when the user answer is much shorter.
+   */
+  private keyTermCoverage(expected: string, given: string): number {
+    const tokenize = (s: string) =>
+      s.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 2 && !QuestionsService.STOP_WORDS.has(w));
+    const keyTerms = tokenize(expected);
+    if (keyTerms.length === 0) return 1;
+    const givenSet = new Set(tokenize(given));
+    const matched = keyTerms.filter(w => givenSet.has(w)).length;
+    return matched / keyTerms.length;
   }
 
   /**

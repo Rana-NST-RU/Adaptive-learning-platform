@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { questionsApi, graphApi, trackerApi } from '@/lib/api-client';
@@ -916,6 +916,103 @@ function SyntaxHighlighter({ code, lang = 'python' }: { code: string; lang?: str
   );
 }
 
+// ─── Content Parsers ──────────────────────────────────────────────────────────
+
+/**
+ * Detects fenced code blocks (```lang\ncode\n```) and inline `code` in question
+ * text and renders them properly instead of as plain text.
+ */
+function parseQuestionContent(content: string, defaultLang?: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  // Split on fenced code blocks: ```[lang]\ncode\n```
+  const fencedRe = /```(\w+)?\n([\s\S]*?)```/g;
+  let last = 0;
+  let match;
+  let keyIdx = 0;
+
+  while ((match = fencedRe.exec(content)) !== null) {
+    // Text before the code block
+    if (match.index > last) {
+      nodes.push(renderInlineText(content.slice(last, match.index), keyIdx++));
+    }
+    const lang = match[1] ?? defaultLang ?? 'python';
+    const code = match[2];
+    nodes.push(
+      <div key={`code-${keyIdx++}`} style={{ margin: '12px 0' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
+          fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
+        }}>
+          <span>{'</>'}</span><span>{lang}</span>
+        </div>
+        <div style={{
+          background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(99,102,241,0.2)',
+          borderRadius: 10, padding: '14px 18px', overflowX: 'auto',
+        }}>
+          <SyntaxHighlighter code={code.trimEnd()} lang={lang} />
+        </div>
+      </div>
+    );
+    last = match.index + match[0].length;
+  }
+
+  // Remaining text
+  if (last < content.length) {
+    nodes.push(renderInlineText(content.slice(last), keyIdx++));
+  }
+
+  return nodes;
+}
+
+/** Renders a string segment with inline `code` spans highlighted */
+function renderInlineText(text: string, key: number): React.ReactNode {
+  const parts = text.split(/(`[^`]+`)/g);
+  return (
+    <span key={`txt-${key}`}>
+      {parts.map((part, i) =>
+        part.startsWith('`') && part.endsWith('`') ? (
+          <code key={i} style={{
+            fontFamily: '"Fira Code","Cascadia Code",Menlo,monospace',
+            fontSize: '0.85em', background: 'rgba(99,102,241,0.15)',
+            color: '#a5b4fc', borderRadius: 4, padding: '1px 6px',
+          }}>
+            {part.slice(1, -1)}
+          </code>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </span>
+  );
+}
+
+/** Renders MCQ option text — highlights inline `code` snippets */
+function renderOptionText(opt: string): React.ReactNode {
+  // Strip leading letter prefix "A) " for rendering, keep it visible
+  const prefixMatch = opt.match(/^([A-D]\)\s*)/);
+  const prefix = prefixMatch ? prefixMatch[1] : '';
+  const rest = prefixMatch ? opt.slice(prefix.length) : opt;
+  const parts = rest.split(/(`[^`]+`)/g);
+  return (
+    <>
+      {prefix}
+      {parts.map((part, i) =>
+        part.startsWith('`') && part.endsWith('`') ? (
+          <code key={i} style={{
+            fontFamily: '"Fira Code","Cascadia Code",Menlo,monospace',
+            fontSize: '0.85em', background: 'rgba(99,102,241,0.15)',
+            color: '#a5b4fc', borderRadius: 4, padding: '1px 6px', margin: '0 2px',
+          }}>
+            {part.slice(1, -1)}
+          </code>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
 // ─── Session View ─────────────────────────────────────────────────────────────
 
 function SessionView({
@@ -1016,9 +1113,10 @@ function SessionView({
           </div>
         )}
 
-        <p style={{ fontSize: 19, fontWeight: 600, color: '#f1f5f9', lineHeight: 1.5, margin: '0 0 28px' }}>
-          {q.content}
-        </p>
+        {/* Question content — supports fenced ``` code blocks and inline `code` */}
+        <div style={{ fontSize: 19, fontWeight: 600, color: '#f1f5f9', lineHeight: 1.6, margin: '0 0 28px' }}>
+          {parseQuestionContent(q.content, q.language)}
+        </div>
 
         {/* MCQ Options */}
         {q.questionType === 'MCQ' && q.options && (
@@ -1039,7 +1137,7 @@ function SessionView({
                     boxShadow: isCorrect ? '0 0 0 1px #10b98155' : isWrong ? '0 0 0 1px #ef444455' : isSelected ? '0 0 0 1px #6366f155' : '0 0 0 1px rgba(255,255,255,0.06)',
                   }}>
                   <span style={{ color: '#475569', marginRight: 10, fontSize: 12 }}>{idx + 1}</span>
-                  {opt}
+                  {renderOptionText(opt)}
                 </button>
               );
             })}

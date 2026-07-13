@@ -11,13 +11,18 @@ import { AuthGuard } from '@nestjs/passport';
  */
 @Injectable()
 export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
-  // Override to never throw — let the handler decide what to do with req.user
-  override canActivate(context: ExecutionContext) {
-    return super.canActivate(context);
+  // Override canActivate to NEVER throw — missing/invalid token => user is null
+  override async canActivate(context: ExecutionContext): Promise<boolean> {
+    try {
+      await super.canActivate(context);
+    } catch {
+      // No token or invalid token — continue as anonymous
+    }
+    return true; // always allow the request through
   }
 
   override handleRequest(_err: any, user: any) {
-    // Return user if available, null otherwise — no exception thrown
-    return user ?? null;
+    // Return user if valid, null otherwise — no exception thrown
+    return user || null;
   }
 }

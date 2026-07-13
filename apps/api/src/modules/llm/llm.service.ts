@@ -72,7 +72,7 @@ export class LlmService {
         },
         { role: 'user', content: prompt },
       ],
-      temperature: 0.7,
+      temperature: 0.95, // higher temperature for more variety
       max_tokens: 4096,
       response_format: { type: 'json_object' },
     });
@@ -91,21 +91,23 @@ export class LlmService {
     types: string,
   ): string {
     return `
-Generate ${count} ${difficulty}-level educational questions about "${conceptName}" (domain: ${domain}).
+Generate ${count} UNIQUE, VARIED ${difficulty}-level educational questions about "${conceptName}" (domain: ${domain}).
+Avoid generic or obvious questions. Focus on edge cases, nuances, and real-world application.
 
 Question types to generate (mix them): ${types}
 
 Rules:
-- MCQ: must have exactly 4 options labeled "A) ...", "B) ...", "C) ...", "D) ...". correctAnswer must be "A", "B", "C", or "D"
+- MCQ: must have exactly 4 options labeled "A) ...", "B) ...", "C) ...", "D) ...". correctAnswer must be "A", "B", "C", or "D".
+  IMPORTANT: If the question involves showing code to the user (e.g. "What is the output of this code?"), put the code in the "codeSnippet" field (with proper indentation) and set "language". The "content" field should only contain the question text, NOT the code.
 - TRUE_FALSE: correctAnswer must be "true" or "false"
-- SHORT_ANSWER: correctAnswer is a concise 1-3 sentence answer. Leave options as null.
-- CODE_SNIPPET: The "content" field is the question text asking the user to fix/complete the code. The "codeSnippet" field must contain actual runnable code with a bug or a blank (use ___ for blanks). correctAnswer is the fixed code or blank answer. Set "language" to the relevant language (e.g. "python", "java", "javascript", "cpp"). Leave options as null.
+- SHORT_ANSWER: correctAnswer must be a SHORT list of key terms/phrases (max 10 words), NOT a full sentence. E.g. "O(log n) time, binary search tree" not "The time complexity is O(log n) because it uses a binary search tree". Leave options as null.
+- CODE_SNIPPET: The "content" field is the question text. The "codeSnippet" field must contain actual runnable code with a bug or a blank (use ___ for blanks). correctAnswer is the fixed code or blank answer. Set "language". Leave options as null.
 
 Return ONLY this JSON structure:
 {
   "questions": [
     {
-      "content": "Question text here?",
+      "content": "Question text here (NO code — put code in codeSnippet)?",
       "questionType": "MCQ",
       "difficulty": "${difficulty}",
       "options": ["A) option1", "B) option2", "C) option3", "D) option4"],

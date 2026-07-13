@@ -94,7 +94,7 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## 🛡️ Sprint 6: Admin/Teacher Portal
+## ✅ Sprint 6: Admin/Teacher Portal — COMPLETE
 **Goal:** Provide tooling for content moderation and platform oversight.
 
 - **Backend:**
@@ -135,6 +135,38 @@ This document outlines the end-to-end development process for the Adaptive Learn
   - Deploy NestJS to a managed container service (e.g., Google Cloud Run, AWS ECS, or Railway).
   - Deploy Next.js to Vercel.
 
+
+---
+
+---
+
+## 🚀 Sprint 8: AI Tutor & Practice Enhancements (CURRENT)
+**Goal:** Make the practice loop dramatically smarter and more engaging.
+- Timed Challenge Mode (countdown timers with XP bonuses)
+- Bookmark Questions (save tricky questions for later)
+- Generate More On Demand (fetch fresh LLM questions directly from practice)
+- Question Quality Rating (thumbs up/down)
+- Explanation Tutor (inline AI chat to ask "why is this wrong?")
+
+---
+
+## 📊 Sprint 9: Analytics, Reporting & Performance
+**Goal:** Give students and admins deep insights, and optimize the platform to scale.
+- Smart Session Generator (auto-build practice from weakest concepts + due reviews)
+- Session Replay (review past answers vs correct answers)
+- Per-Student Analytics (admin drill-down into individual performance)
+- Progress Report PDF Export (weekly/monthly PDF summary)
+- Redis Caching for Heavy Endpoints
+- Database Index Audit
+
+---
+
+## 👥 Sprint 10: Social & Polish
+**Goal:** Bring users together and finalize production readiness.
+- Cohort Analytics for admins
+- Study Groups (shared real-time question sessions)
+- Error Monitoring (Sentry integration)
+- Unit & E2E Testing (Jest + Playwright)
 
 ---
 
