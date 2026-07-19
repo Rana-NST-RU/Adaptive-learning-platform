@@ -64,6 +64,26 @@ export default function PracticePage() {
   const [isReviewMode, setIsReviewMode] = useState(false);
   const [reviewModeLoading, setReviewModeLoading] = useState(false);
 
+  // Smart Session mode
+  const [isSmartSessionLoading, setIsSmartSessionLoading] = useState(false);
+
+  // Timed Challenge mode
+  const [timedMode, setTimedMode] = useState(false);
+  const [timeLimit, setTimeLimit] = useState(60); // seconds per question
+  const [timeLeft, setTimeLeft] = useState(60);
+  const [timeBonus, setTimeBonus] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Bookmarks & ratings
+  const [bookmarked, setBookmarked] = useState<Set<string>>(new Set());
+  const [ratings, setRatings] = useState<Record<string, 'up' | 'down'>>({});
+
+  // Tutor chat
+  const [tutorOpen, setTutorOpen] = useState(false);
+  const [tutorMessages, setTutorMessages] = useState<{ role: 'user' | 'tutor'; text: string }[]>([]);
+  const [tutorInput, setTutorInput] = useState('');
+  const [tutorLoading, setTutorLoading] = useState(false);
+
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [result, setResult] = useState<AttemptResult | null>(null);
@@ -182,6 +202,62 @@ export default function PracticePage() {
     c.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // ─── Smart Session ─────────────────────────────────────────────────────────
+
+  const startSmartSession = useCallback(async () => {
+    setIsSmartSessionLoading(true);
+    setSessionError(null);
+    setPhase('loading');
+    setLoadingMessage('🧠 Building your personalised session…');
+    try {
+      const res = await questionsApi.getSmartSession({ domain: selectedDomain, limit: questionCount });
+      const qs = res.data;
+      if (!qs || qs.length === 0) {
+        setSessionError('Not enough questions yet. Practice a concept first to build your profile!');
+        setPhase('concept-picker');
+        return;
+      }
+      setQuestions(qs.slice(0, questionCount));
+      setCurrentIndex(0);
+      setResult(null);
+      setStats({ total: 0, correct: 0, xpEarned: 0, avgTime: 0, results: [] });
+      setHintsShown(0);
+      setSelectedOption(null);
+      setTfAnswer(null);
+      setShortAnswer('');
+      setTutorOpen(false);
+      setTutorMessages([]);
+      startTimeRef.current = Date.now();
+      if (timedMode) setTimeLeft(timeLimit);
+      setPhase('session');
+    } catch {
+      setSessionError('Could not build smart session. Please try again.');
+      setPhase('concept-picker');
+    } finally {
+      setIsSmartSessionLoading(false);
+    }
+  }, [selectedDomain, questionCount, timedMode, timeLimit]);
+
+  // ─── Timer for Timed Challenge Mode ────────────────────────────────────────
+
+  useEffect(() => {
+    if (phase !== 'session' || !timedMode || result !== null) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimeLeft(timeLimit);
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          // Auto-submit with empty answer
+          submitAnswer();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [currentIndex, phase, timedMode, result]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Start Session ─────────────────────────────────────────────────────────
 
   const startSession = useCallback(async () => {
@@ -222,7 +298,12 @@ export default function PracticePage() {
       setSelectedOption(null);
       setTfAnswer(null);
       setShortAnswer('');
+      setTutorOpen(false);
+      setTutorMessages([]);
       startTimeRef.current = Date.now();
+      if (timedMode) setTimeLeft(timeLimit);
+      // Clear replay buffer for fresh session
+      try { sessionStorage.removeItem('alos_replay'); } catch { /* ignore */ }
       setPhase('session');
     } catch (err: any) {
       console.error('[Practice] startSession error:', err?.response?.data ?? err);
@@ -288,13 +369,30 @@ export default function PracticePage() {
         setAutoSuggestion(res.data.suggestedDifficulty);
         setTimeout(() => setAutoSuggestion(null), 5000);
       }
-      setStats(prev => ({
-        total: prev.total + 1,
-        correct: prev.correct + (res.data.isCorrect ? 1 : 0),
-        xpEarned: prev.xpEarned + res.data.xpEarned,
-        avgTime: Math.round((prev.avgTime * prev.total + timeTakenMs) / (prev.total + 1)),
-        results: [...prev.results, res.data],
-      }));
+      setStats(prev => {
+        const newResults = [...prev.results, res.data];
+        const newStats = {
+          total: prev.total + 1,
+          correct: prev.correct + (res.data.isCorrect ? 1 : 0),
+          xpEarned: prev.xpEarned + res.data.xpEarned,
+          avgTime: Math.round((prev.avgTime * prev.total + timeTakenMs) / (prev.total + 1)),
+          results: newResults,
+        };
+        // ─── Session Replay: persist to sessionStorage ──────────────────────────
+        const replayEntry = {
+          question: currentQ,
+          userAnswer: selectedOption ?? tfAnswer ?? shortAnswer,
+          result: res.data,
+          timeTakenMs,
+          hintsUsed: hintsShown,
+        };
+        try {
+          const existing = JSON.parse(sessionStorage.getItem('alos_replay') ?? '[]');
+          existing.push(replayEntry);
+          sessionStorage.setItem('alos_replay', JSON.stringify(existing));
+        } catch { /* ignore */ }
+        return newStats;
+      });
     } catch {
       setSessionError('Failed to submit answer. Please try again.');
     }
@@ -405,12 +503,18 @@ export default function PracticePage() {
           selectedDiff={selectedDiff}
           questionCount={questionCount}
           searchQuery={searchQuery}
+          timedMode={timedMode}
+          timeLimit={timeLimit}
+          isSmartSessionLoading={isSmartSessionLoading}
           onSelectConcept={setSelectedConcept}
           onSelectDomain={setSelectedDomain}
           onSelectDiff={setSelectedDiff}
           onSetCount={setQuestionCount}
           onSearch={setSearchQuery}
           onStart={startSession}
+          onSmartSession={startSmartSession}
+          onToggleTimedMode={() => setTimedMode(v => !v)}
+          onSetTimeLimit={setTimeLimit}
         />
       )}
 
@@ -428,6 +532,15 @@ export default function PracticePage() {
           shortAnswer={shortAnswer}
           xpAnim={xpAnim}
           confidenceGiven={confidenceGiven}
+          timedMode={timedMode}
+          timeLeft={timeLeft}
+          timeLimit={timeLimit}
+          bookmarked={bookmarked}
+          ratings={ratings}
+          tutorOpen={tutorOpen}
+          tutorMessages={tutorMessages}
+          tutorInput={tutorInput}
+          tutorLoading={tutorLoading}
           onSelectOption={setSelectedOption}
           onSetTf={setTfAnswer}
           onSetShortAnswer={setShortAnswer}
@@ -435,6 +548,33 @@ export default function PracticePage() {
           onSubmit={submitAnswer}
           onRateConfidence={(g: number) => setConfidenceGiven(g)}
           onNext={nextQuestion}
+          onToggleBookmark={(id: string) => setBookmarked(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+          })}
+          onRate={(id: string, v: 'up' | 'down') => {
+            setRatings(prev => ({ ...prev, [id]: v }));
+            questionsApi.flagQuestion(id, v === 'up' ? 'quality_positive' : 'quality_negative').catch(() => {});
+          }}
+          onToggleTutor={() => { setTutorOpen(o => !o); setTutorMessages([]); }}
+          onTutorInputChange={setTutorInput}
+          onTutorSend={async () => {
+            if (!tutorInput.trim() || tutorLoading) return;
+            const q = questions[currentIndex];
+            const userMsg = tutorInput.trim();
+            setTutorMessages(m => [...m, { role: 'user', text: userMsg }]);
+            setTutorInput('');
+            setTutorLoading(true);
+            try {
+              const res = await questionsApi.askTutor(q.id, userMsg, result?.correctAnswer ?? '');
+              setTutorMessages(m => [...m, { role: 'tutor', text: res.data.reply }]);
+            } catch {
+              setTutorMessages(m => [...m, { role: 'tutor', text: 'Sorry, I could not respond right now. Try again!' }]);
+            } finally {
+              setTutorLoading(false);
+            }
+          }}
         />
       )}
 
@@ -545,7 +685,9 @@ export default function PracticePage() {
 
 function ConceptPicker({
   concepts, conceptsLoading, mastery, selectedConcept, selectedDomain, selectedDiff, questionCount,
-  searchQuery, onSelectConcept, onSelectDomain, onSelectDiff, onSetCount, onSearch, onStart,
+  searchQuery, timedMode, timeLimit, isSmartSessionLoading,
+  onSelectConcept, onSelectDomain, onSelectDiff, onSetCount, onSearch, onStart, onSmartSession,
+  onToggleTimedMode, onSetTimeLimit,
 }: any) {
   const diffOptions: QuestionDifficulty[] = ['EASY', 'MEDIUM', 'HARD'];
 
@@ -732,25 +874,82 @@ function ConceptPicker({
         <SelfAssessmentSlider concept={selectedConcept} onRate={() => {}} />
       )}
 
-      {/* Start button */}
-      <button
-        onClick={onStart}
-        disabled={!selectedConcept}
-        style={{
-          width: '100%', padding: '16px', borderRadius: 14, border: 'none',
-          cursor: selectedConcept ? 'pointer' : 'not-allowed',
-          background: selectedConcept
-            ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
-            : 'rgba(255,255,255,0.06)',
-          color: selectedConcept ? '#fff' : '#475569',
-          fontSize: 16, fontWeight: 700, transition: 'all 0.3s',
-          boxShadow: selectedConcept ? '0 8px 32px rgba(99,102,241,0.4)' : 'none',
-        }}
-      >
-        {selectedConcept
-          ? `⚡ Start ${questionCount} questions on "${selectedConcept.name}"`
-          : 'Select a concept to begin'}
-      </button>
+      {/* Timed Challenge Mode toggle */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+        padding: '12px 16px', borderRadius: 12,
+        background: timedMode ? 'rgba(239,68,68,0.07)' : 'rgba(255,255,255,0.03)',
+        border: `1px solid ${timedMode ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.06)'}`,
+        transition: 'all 0.3s',
+      }}>
+        <button
+          onClick={onToggleTimedMode}
+          style={{
+            width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
+            background: timedMode ? '#ef4444' : 'rgba(255,255,255,0.12)',
+            position: 'relative', transition: 'background 0.3s', flexShrink: 0,
+          }}
+        >
+          <span style={{
+            position: 'absolute', top: 2, left: timedMode ? 20 : 2,
+            width: 18, height: 18, borderRadius: '50%', background: '#fff',
+            transition: 'left 0.3s', boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+          }} />
+        </button>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: timedMode ? '#fca5a5' : '#94a3b8' }}>⏱ Timed Challenge Mode</div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Auto-submits when timer expires. Fast answers earn bonus XP!</div>
+        </div>
+        {timedMode && (
+          <select
+            value={timeLimit}
+            onChange={e => onSetTimeLimit(Number(e.target.value))}
+            style={{
+              padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
+              background: 'rgba(255,255,255,0.06)', color: '#e2e8f0', fontSize: 12, cursor: 'pointer',
+            }}
+          >
+            {[30, 45, 60, 90, 120].map(s => <option key={s} value={s}>{s}s</option>)}
+          </select>
+        )}
+      </div>
+
+      {/* Action buttons row */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+        {/* Smart Session button */}
+        <button
+          onClick={onSmartSession}
+          disabled={isSmartSessionLoading}
+          style={{
+            flex: 1, padding: '14px', borderRadius: 14, cursor: isSmartSessionLoading ? 'wait' : 'pointer',
+            background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,182,212,0.15))',
+            border: '1px solid rgba(16,185,129,0.3)',
+            color: '#6ee7b7', fontSize: 14, fontWeight: 700, transition: 'all 0.3s',
+          }}
+        >
+          {isSmartSessionLoading ? '🔄 Building…' : '🧠 Smart Session'}
+        </button>
+
+        {/* Manual start button */}
+        <button
+          onClick={onStart}
+          disabled={!selectedConcept}
+          style={{
+            flex: 2, padding: '14px', borderRadius: 14, border: 'none',
+            cursor: selectedConcept ? 'pointer' : 'not-allowed',
+            background: selectedConcept
+              ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
+              : 'rgba(255,255,255,0.06)',
+            color: selectedConcept ? '#fff' : '#475569',
+            fontSize: 15, fontWeight: 700, transition: 'all 0.3s',
+            boxShadow: selectedConcept ? '0 8px 32px rgba(99,102,241,0.4)' : 'none',
+          }}
+        >
+          {selectedConcept
+            ? `⚡ Start ${questionCount} Qs — "${selectedConcept.name}"`
+            : 'Select a concept or use Smart Session'}
+        </button>
+      </div>
 
       <style>{`
         @keyframes shimmer {
@@ -1018,7 +1217,10 @@ function renderOptionText(opt: string): React.ReactNode {
 function SessionView({
   question, questionIndex, totalQuestions, result, hintsShown,
   selectedOption, tfAnswer, shortAnswer, xpAnim, confidenceGiven,
+  timedMode, timeLeft, timeLimit, bookmarked, ratings,
+  tutorOpen, tutorMessages, tutorInput, tutorLoading,
   onSelectOption, onSetTf, onSetShortAnswer, onRevealHint, onSubmit, onNext, onRateConfidence,
+  onToggleBookmark, onRate, onToggleTutor, onTutorInputChange, onTutorSend,
 }: any) {
   const q: Question = question;
   const answered = result !== null;
@@ -1078,6 +1280,34 @@ function SessionView({
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
           <span style={{ color: '#94a3b8', fontSize: 13 }}>Question {questionIndex + 1} of {totalQuestions}</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Timer badge */}
+            {timedMode && (
+              <span style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontWeight: 700, fontSize: 13, padding: '2px 12px', borderRadius: 20,
+                background: timeLeft <= 10 ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.06)',
+                color: timeLeft <= 10 ? '#ef4444' : '#94a3b8',
+                border: timeLeft <= 10 ? '1px solid rgba(239,68,68,0.3)' : '1px solid transparent',
+                animation: timeLeft <= 10 ? 'pulse 1s infinite' : 'none',
+                transition: 'all 0.3s',
+              }}>
+                ⏱ {timeLeft}s
+              </span>
+            )}
+            {/* Timer ring for timed mode */}
+            {timedMode && (
+              <svg width="28" height="28" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx="14" cy="14" r="11" stroke="rgba(255,255,255,0.08)" strokeWidth="3" fill="none" />
+                <circle
+                  cx="14" cy="14" r="11"
+                  stroke={timeLeft <= 10 ? '#ef4444' : '#6366f1'}
+                  strokeWidth="3" fill="none"
+                  strokeDasharray={`${2 * Math.PI * 11}`}
+                  strokeDashoffset={`${2 * Math.PI * 11 * (1 - timeLeft / timeLimit)}`}
+                  style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.5s' }}
+                />
+              </svg>
+            )}
             <span style={{ color: '#475569', fontSize: 11 }}>Press 1-4 · H=hint · Enter=next</span>
             <span style={{ color: '#94a3b8', fontSize: 13, background: 'rgba(255,255,255,0.05)', padding: '2px 10px', borderRadius: 20 }}>
               {q.questionType.replace('_', ' ')} · <span style={{ color: DIFF_COLORS[q.difficulty] }}>{DIFF_LABELS[q.difficulty]}</span>
@@ -1232,6 +1462,17 @@ function SessionView({
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {/* Bookmark */}
+              <button
+                onClick={() => onToggleBookmark(q.id)}
+                title={bookmarked?.has(q.id) ? 'Remove bookmark' : 'Bookmark question'}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 20,
+                  opacity: bookmarked?.has(q.id) ? 1 : 0.4,
+                  filter: bookmarked?.has(q.id) ? 'none' : 'grayscale(1)',
+                  transition: 'all 0.2s', padding: 4,
+                }}
+              >⭐</button>
               <div style={{
                 background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: 10, padding: '5px 12px', color: '#94a3b8', fontSize: 13, fontWeight: 600,
@@ -1251,6 +1492,106 @@ function SessionView({
           <p style={{ color: '#94a3b8', fontSize: 14, lineHeight: 1.6, margin: 0 }}>
             <strong style={{ color: '#e2e8f0' }}>Explanation: </strong>{result!.explanation}
           </p>
+
+          {/* Quality Rating + Tutor row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: '#475569' }}>Question quality:</span>
+              <button
+                onClick={() => onRate(q.id, 'up')}
+                style={{
+                  background: ratings?.[q.id] === 'up' ? 'rgba(16,185,129,0.15)' : 'none',
+                  border: `1px solid ${ratings?.[q.id] === 'up' ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                  borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 14, transition: 'all 0.2s',
+                }}
+              >👍</button>
+              <button
+                onClick={() => onRate(q.id, 'down')}
+                style={{
+                  background: ratings?.[q.id] === 'down' ? 'rgba(239,68,68,0.15)' : 'none',
+                  border: `1px solid ${ratings?.[q.id] === 'down' ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                  borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 14, transition: 'all 0.2s',
+                }}
+              >👎</button>
+            </div>
+            {!result!.isCorrect && (
+              <button
+                onClick={onToggleTutor}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 14px', borderRadius: 10, border: '1px solid rgba(99,102,241,0.3)',
+                  background: tutorOpen ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.06)',
+                  color: '#a5b4fc', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                }}
+              >
+                💬 {tutorOpen ? 'Close Tutor' : 'Ask Tutor — Why is this wrong?'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* AI Tutor Chat Panel */}
+      {answered && tutorOpen && (
+        <div style={{
+          borderRadius: 16, overflow: 'hidden', marginBottom: 12,
+          border: '1px solid rgba(99,102,241,0.2)',
+          background: 'rgba(15,15,30,0.6)', backdropFilter: 'blur(20px)',
+          animation: 'fadeIn 0.3s ease',
+        }}>
+          <div style={{ padding: '12px 16px', background: 'rgba(99,102,241,0.1)', borderBottom: '1px solid rgba(99,102,241,0.15)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 18 }}>🧠</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#a5b4fc' }}>AI Tutor</span>
+            <span style={{ fontSize: 11, color: '#475569', marginLeft: 4 }}>Ask me why this is wrong, or for a different explanation</span>
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {tutorMessages.length === 0 && (
+              <div style={{ color: '#475569', fontSize: 13, textAlign: 'center', padding: '12px 0' }}>
+                👋 Type your question below to get a tailored explanation
+              </div>
+            )}
+            {tutorMessages.map((m: any, i: number) => (
+              <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '80%', padding: '8px 12px', borderRadius: 12,
+                  background: m.role === 'user' ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${m.role === 'user' ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                  color: '#e2e8f0', fontSize: 13, lineHeight: 1.5,
+                }}>
+                  {m.text}
+                </div>
+              </div>
+            ))}
+            {tutorLoading && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div style={{ padding: '8px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: '#64748b', fontSize: 13 }}>
+                  ⏳ Tutor is thinking…
+                </div>
+              </div>
+            )}
+          </div>
+          <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              value={tutorInput}
+              onChange={e => onTutorInputChange(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && onTutorSend()}
+              placeholder="Why is this the correct answer?"
+              style={{
+                flex: 1, padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)',
+                background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', fontSize: 13, outline: 'none',
+              }}
+            />
+            <button
+              onClick={onTutorSend}
+              disabled={tutorLoading || !tutorInput?.trim()}
+              style={{
+                padding: '8px 16px', borderRadius: 10, border: 'none',
+                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              }}
+            >Send</button>
+          </div>
         </div>
       )}
 
@@ -1421,6 +1762,14 @@ function SummaryScreen({ stats, concept, wrongCount, onRestart, onRepeat, onRetr
             boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
           }}>{reviewComplete ? '🏠 Back to Dashboard' : '✨ New Concept'}</button>
         )}
+        {/* Session Replay */}
+        <a href="/dashboard/practice/replay" style={{
+          flex: 1, minWidth: 120, padding: '14px', borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.1)',
+          background: 'rgba(255,255,255,0.04)', color: '#94a3b8',
+          fontWeight: 700, fontSize: 14, cursor: 'pointer', textDecoration: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        }}>▶ Replay</a>
       </div>
 
       <style>{`

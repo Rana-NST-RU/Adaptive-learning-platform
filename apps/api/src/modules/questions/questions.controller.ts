@@ -69,12 +69,27 @@ export class QuestionsController {
     return this.questionsService.generateQuestions(dto);
   }
 
+  @Get('smart-session')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Auto-generate a practice session based on weakest concepts and due reviews' })
+  @ApiQuery({ name: 'domain', required: false, enum: ['DSA', 'SYSTEM_DESIGN'] })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiResponse({ status: 200, type: [QuestionResponseDto] })
+  async getSmartSession(
+    @Request() req: any,
+    @Query('domain') domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ): Promise<QuestionResponseDto[]> {
+    return this.questionsService.getSmartSession(req.user.sub, domain, limit);
+  }
+
   // ─── POST /questions/attempt ──────────────────────────────────────────────
 
   @Post('attempt')
   @UseGuards(OptionalJwtAuthGuard)
   @ApiBearerAuth()
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.OK) 
   @ApiOperation({
     summary: 'Submit an answer for a question',
     description:
@@ -130,6 +145,21 @@ export class QuestionsController {
     @Body('reason') reason: string,
   ) {
     return this.questionsService.flagQuestion(id, req.user.sub, reason);
+  }
+
+  // ─── POST /questions/:id/tutor ────────────────────────────────────────────
+
+  @Post(':id/tutor')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Ask the AI Tutor why an answer is wrong — stateless LLM chat' })
+  askTutor(
+    @Param('id') id: string,
+    @Body('userMessage') userMessage: string,
+    @Body('correctAnswer') correctAnswer: string,
+  ) {
+    return this.questionsService.askTutor(id, userMessage, correctAnswer);
   }
 
   // ─── GET /questions/:id ──────────────────────────────────────────────────

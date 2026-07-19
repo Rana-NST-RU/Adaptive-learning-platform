@@ -345,4 +345,111 @@ export class AdminService {
 
     return { logs, total, page, totalPages: Math.ceil(total / limit) };
   }
+
+  // ─── Per-Student Analytics ────────────────────────────────────────────────
+
+  async getUserAnalytics(userId: string) {
+    const [user, profile, streak, masteries, recentAttempts, attemptStats] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, name: true, email: true, role: true, createdAt: true, isActive: true },
+      }),
+      this.prisma.userProfile.findUnique({
+        where: { userId },
+        select: { totalXP: true, currentLevel: true, preferredDomain: true, institution: true, targetExam: true },
+      }),
+      this.prisma.learningStreak.findUnique({
+        where: { userId },
+        select: { currentStreak: true, longestStreak: true, totalActiveDays: true, lastActiveDate: true },
+      }),
+      // Top 10 most practiced concepts
+      this.prisma.conceptMastery.findMany({
+        where: { userId },
+        orderBy: { totalAttempts: 'desc' },
+        take: 10,
+        select: {
+          conceptId: true, conceptName: true, domain: true,
+          masteryScore: true, masteryLevel: true, totalAttempts: true,
+          correctAttempts: true, nextRevisionDue: true, lastAttemptAt: true,
+        },
+      }),
+      // Last 30 attempts for timeline
+      this.prisma.questionAttempt.findMany({
+        where: { userId },
+        orderBy: { timestamp: 'desc' },
+        take: 30,
+        select: {
+          id: true, isCorrect: true, score: true, timeTakenMs: true,
+          timestamp: true, hintsUsed: true,
+          question: { select: { conceptName: true, domain: true, difficulty: true, questionType: true } },
+        },
+      }),
+      // Aggregate accuracy and counts
+      this.prisma.questionAttempt.aggregate({
+        where: { userId },
+        _count: { id: true },
+        _avg: { score: true, timeTakenMs: true },
+        _sum: { isCorrect: true } as any,
+      }),
+    ]);
+
+    if (!user) throw new Error('User not found');
+
+    // 14-day daily activity trend
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    const dailyActivity = await this.prisma.questionAttempt.groupBy({
+      by: ['timestamp'],
+      where: { userId, timestamp: { gte: fourteenDaysAgo } },
+      _count: { id: true },
+    });
+
+    // Aggregate by date string
+    const activityMap: Record<string, number> = {};
+    dailyActivity.forEach(row => {
+      const day = (row.timestamp as Date).toISOString().slice(0, 10);
+      activityMap[day] = (activityMap[day] || 0) + row._count.id;
+    });
+    const activityTrend = Array.from({ length: 14 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (13 - i));
+      const key = d.toISOString().slice(0, 10);
+      return { date: key, count: activityMap[key] || 0 };
+    });
+
+    // Accuracy by domain
+    const [dsaStats, sdStats] = await Promise.all([
+      this.prisma.questionAttempt.findMany({
+        where: { userId, question: { domain: 'DSA' } },
+        select: { isCorrect: true },
+      }),
+      this.prisma.questionAttempt.findMany({
+        where: { userId, question: { domain: 'SYSTEM_DESIGN' } },
+        select: { isCorrect: true },
+      }),
+    ]);
+
+    const calcAccuracy = (arr: { isCorrect: boolean }[]) =>
+      arr.length > 0 ? Math.round((arr.filter(a => a.isCorrect).length / arr.length) * 100) : null;
+
+    const totalAttempts = (attemptStats as any)._count?.id ?? 0;
+    const correctTotal = recentAttempts.filter(a => a.isCorrect).length;
+
+    return {
+      user,
+      profile,
+      streak,
+      stats: {
+        totalAttempts,
+        overallAccuracy: calcAccuracy(recentAttempts.map(a => ({ isCorrect: a.isCorrect }))),
+        avgScore: Math.round(((attemptStats as any)._avg?.score ?? 0) * 100),
+        avgTimeSec: Math.round(((attemptStats as any)._avg?.timeTakenMs ?? 0) / 1000),
+        dsaAccuracy: calcAccuracy(dsaStats),
+        sdAccuracy: calcAccuracy(sdStats),
+      },
+      masteries,
+      recentAttempts,
+      activityTrend,
+    };
+  }
 }

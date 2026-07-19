@@ -302,7 +302,7 @@ export class TrackerService {
 
   async generateRecommendations(
     userId: string,
-    domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
+    domain: Domain = 'DSA',
   ): Promise<any[]> {
     const now = new Date();
     const soonThreshold = new Date(now.getTime() + 6 * 60 * 60 * 1000);
@@ -391,7 +391,7 @@ export class TrackerService {
 
   // ─── "Today's Plan" Session Planner ──────────────────────────────────────
 
-  async getDailyPlan(userId: string, domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA') {
+  async getDailyPlan(userId: string, domain: Domain = 'DSA') {
     const now = new Date();
 
     const [profile, streak, masteries] = await Promise.all([
@@ -462,7 +462,7 @@ export class TrackerService {
 
   // ─── Due Concepts (Smart Review) ─────────────────────────────────────────
 
-  async getDueConcepts(userId: string, domain?: 'DSA' | 'SYSTEM_DESIGN') {
+  async getDueConcepts(userId: string, domain?: Domain) {
     const now = new Date();
     const where: any = { userId, totalAttempts: { gte: 2 } };
     if (domain) where.domain = domain;
@@ -594,7 +594,7 @@ export class TrackerService {
 
   // ─── Mastery Overview ─────────────────────────────────────────────────────
 
-  async getMasteryOverview(userId: string, domain?: 'DSA' | 'SYSTEM_DESIGN') {
+  async getMasteryOverview(userId: string, domain?: Domain) {
     const where: any = { userId };
     if (domain) where.domain = domain;
 
@@ -720,7 +720,7 @@ export class TrackerService {
    */
   async getFadingSoon(
     userId: string,
-    domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
+    domain: Domain = 'DSA',
     windowHours = 72,
   ): Promise<any[]> {
     const now = Date.now();
@@ -980,7 +980,7 @@ export class TrackerService {
     userId: string,
     conceptId: string,
     conceptName: string,
-    domain: 'DSA' | 'SYSTEM_DESIGN',
+    domain: Domain,
     rating: number, // 1-5
   ): Promise<void> {
     const STABILITY_MAP: Record<number, number> = {
@@ -1067,7 +1067,7 @@ export class TrackerService {
   }
 
   // ─── Due Concept Count (for dashboard banner) ─────────────────────────────
-  async getDueConceptCount(userId: string, domain?: 'DSA' | 'SYSTEM_DESIGN'): Promise<number> {
+  async getDueConceptCount(userId: string, domain?: Domain): Promise<number> {
     const now = new Date();
     return this.prisma.conceptMastery.count({
       where: {

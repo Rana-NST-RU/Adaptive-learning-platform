@@ -331,15 +331,25 @@ export default function AdminUsersPage() {
                   </span>
                 </td>
                 <td style={{ padding: '12px 16px' }} onClick={e => e.stopPropagation()}>
-                  <button onClick={() => handleToggleActive(user.id, user.isActive)} disabled={updating === user.id}
-                    style={{
-                      background: user.isActive ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
-                      border: `1px solid ${user.isActive ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
-                      color: user.isActive ? '#ef4444' : '#10b981',
-                      borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12,
-                    }}>
-                    {updating === user.id ? '…' : user.isActive ? 'Deactivate' : 'Activate'}
-                  </button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => handleToggleActive(user.id, user.isActive)} disabled={updating === user.id}
+                      style={{
+                        background: user.isActive ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
+                        border: `1px solid ${user.isActive ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
+                        color: user.isActive ? '#ef4444' : '#10b981',
+                        borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12,
+                      }}>
+                      {updating === user.id ? '…' : user.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <a href={`/admin/users/${user.id}/analytics`}
+                      style={{
+                        background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)',
+                        color: '#a5b4fc', borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12,
+                        textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4,
+                      }}>
+                      📊 Analytics
+                    </a>
+                  </div>
                 </td>
               </tr>
             ))}

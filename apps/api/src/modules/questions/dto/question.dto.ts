@@ -87,6 +87,11 @@ export class SubmitAttemptDto {
 }
 
 export class GetQuestionsDto {
+  @ApiPropertyOptional({ example: 'binary-search,arrays' })
+  @IsOptional()
+  @IsString()
+  conceptIds?: string;
+
   @ApiPropertyOptional({ example: 'binary-search' })
   @IsOptional()
   @IsString()

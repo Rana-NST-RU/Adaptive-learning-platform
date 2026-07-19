@@ -31,6 +31,9 @@ model User {
   profile          UserProfile?
   achievements     UserAchievement[]
 
+  @@index([role])           // admin user-list filter
+  @@index([isActive])       // admin active-user filter
+  @@index([createdAt])      // admin recent-registrations
   @@map("users")
 }
 
@@ -200,6 +203,7 @@ model QuestionAttempt {
   @@index([userId, questionId])
   @@index([userId, timestamp])
   @@index([questionId])
+  @@index([isCorrect])      // accuracy aggregation
   @@map("question_attempts")
 }
 

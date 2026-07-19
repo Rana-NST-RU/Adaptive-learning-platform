@@ -85,6 +85,12 @@ export class AdminController {
     return this.adminService.toggleUserActive(id, body.isActive);
   }
 
+  @Get('users/:id/analytics')
+  @ApiOperation({ summary: 'Per-student analytics: XP, streak, mastery, accuracy, activity trend' })
+  getUserAnalytics(@Param('id') id: string) {
+    return this.adminService.getUserAnalytics(id);
+  }
+
   // ─── Question Moderation ──────────────────────────────────────────────────
 
   @Get('questions')

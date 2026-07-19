@@ -292,6 +292,12 @@ export const questionsApi = {
     limit?: number;
   }) =>
     apiClient.get<Question[]>('/questions', { params }),
+    
+  /**
+   * Auto-generate a practice session based on weakest concepts and due reviews
+   */
+  getSmartSession: (params?: { domain?: string; limit?: number }) =>
+    apiClient.get<Question[]>('/questions/smart-session', { params }),
 
   /**
    * Generate fresh questions via Groq LLM, saves to DB
@@ -324,6 +330,21 @@ export const questionsApi = {
   getMastery: (conceptIds: string[]) =>
     apiClient.get<Record<string, MasteryData>>('/questions/mastery', {
       params: { conceptIds: conceptIds.join(',') },
+    }),
+
+  /**
+   * Flag a question for admin review (quality_positive / quality_negative)
+   */
+  flagQuestion: (id: string, reason: string) =>
+    apiClient.post(`/questions/${id}/flag`, { reason }),
+
+  /**
+   * Ask the AI Tutor why an answer is wrong (stateless, per-question chat)
+   */
+  askTutor: (questionId: string, userMessage: string, correctAnswer: string) =>
+    apiClient.post<{ reply: string }>(`/questions/${questionId}/tutor`, {
+      userMessage,
+      correctAnswer,
     }),
 };
 
@@ -541,6 +562,10 @@ export const adminApi = {
   // Audit Logs
   getAuditLogs: (page = 1, limit = 50) =>
     apiClient.get('/admin/audit-logs', { params: { page, limit } }),
+
+  // Per-student analytics
+  getUserAnalytics: (userId: string) =>
+    apiClient.get(`/admin/users/${userId}/analytics`),
 };
 
 // Flag a question (available to all authenticated users)

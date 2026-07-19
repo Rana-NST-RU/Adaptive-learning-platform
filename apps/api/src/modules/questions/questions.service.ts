@@ -98,13 +98,17 @@ export class QuestionsService {
   // ─── Fetch Questions ───────────────────────────────────────────────────────
 
   async getQuestions(dto: GetQuestionsDto): Promise<QuestionResponseDto[]> {
-    const { conceptId, difficulty, domain, questionType, limit = 5 } = dto;
+    const { conceptId, conceptIds, difficulty, domain, questionType, limit = 5 } = dto;
+
+    const conceptIdsArray = conceptIds 
+      ? conceptIds.split(',').map(s => s.trim()).filter(Boolean)
+      : (conceptId ? [conceptId] : undefined);
 
     // Fetch a wide candidate pool so we can shuffle — prevents same questions every session
     const pool = await this.prisma.question.findMany({
       where: {
         isActive: true,
-        ...(conceptId && { conceptId }),
+        ...(conceptIdsArray && { conceptId: { in: conceptIdsArray } }),
         ...(difficulty && { difficulty }),
         ...(domain && { domain }),
         ...(questionType && { questionType }),
@@ -126,6 +130,36 @@ export class QuestionsService {
     const q = await this.prisma.question.findUnique({ where: { id } });
     if (!q) throw new NotFoundException(`Question ${id} not found`);
     return this.toResponseDto(q);
+  }
+
+  // ─── Smart Session ─────────────────────────────────────────────────────────
+
+  async getSmartSession(userId: string, domain: Domain, limit: number): Promise<QuestionResponseDto[]> {
+    // 1. Get personalised recommendations
+    const recommendations = await this.tracker.generateRecommendations(userId, domain);
+    
+    // 2. Extract concept IDs from top 3 recommendations
+    const conceptIds = recommendations.slice(0, 3).map(r => r.conceptId);
+    
+    if (conceptIds.length === 0) {
+      // Fallback: fetch random questions for the domain
+      return this.getQuestions({ domain, limit });
+    }
+
+    // 3. Fetch questions for these concepts
+    const questions = await this.getQuestions({ conceptIds: conceptIds.join(','), limit });
+    
+    // If not enough questions for the specific concepts, fallback to domain-wide
+    if (questions.length < limit) {
+      const more = await this.getQuestions({ domain, limit: limit });
+      const existingIds = new Set(questions.map(q => q.id));
+      for (const q of more) {
+        if (!existingIds.has(q.id)) questions.push(q);
+        if (questions.length >= limit) break;
+      }
+    }
+    
+    return questions.slice(0, limit);
   }
 
   // ─── Submit Attempt ────────────────────────────────────────────────────────
@@ -515,5 +549,27 @@ export class QuestionsService {
         flaggedBy: userId,
       },
     });
+  }
+
+  // ─── Explanation Tutor ────────────────────────────────────────────────────
+
+  async askTutor(questionId: string, userMessage: string, correctAnswer: string): Promise<{ reply: string }> {
+    const q = await this.prisma.question.findUnique({ where: { id: questionId } });
+    if (!q) throw new NotFoundException('Question not found');
+
+    const context = [
+      `Question: ${q.content}`,
+      q.codeSnippet ? `Code:\n\`\`\`\n${q.codeSnippet}\n\`\`\`` : '',
+      `Correct Answer: ${correctAnswer || q.correctAnswer}`,
+      q.explanation ? `Explanation: ${q.explanation}` : '',
+    ].filter(Boolean).join('\n');
+
+    const systemPrompt = `You are a friendly, concise coding tutor helping a student understand why their answer was wrong.
+You have context about the question. Give a clear, direct explanation in 2-4 sentences.
+Do not repeat the full question back. Focus on the student's specific follow-up question.
+Be encouraging and educational.`;
+
+    const reply = await this.llm.chat(systemPrompt, `Context:\n${context}\n\nStudent's question: ${userMessage}`);
+    return { reply };
   }
 }

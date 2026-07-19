@@ -22,6 +22,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TrackerService } from './tracker.service';
 import { IsInt, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Domain } from '@prisma/client';
 
 class RateConfidenceDto {
   @ApiProperty({ example: 'attempt-id-here' })
@@ -70,7 +71,7 @@ export class TrackerController {
   @ApiOperation({ summary: 'Personalised recommendations (REVISE / LEARN_NEW / PRACTICE)' })
   getRecommendations(
     @Request() req: any,
-    @Query('domain') domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
+    @Query('domain') domain: Domain = 'DSA',
   ) {
     return this.tracker.generateRecommendations(req.user.sub, domain);
   }
@@ -82,7 +83,7 @@ export class TrackerController {
   @ApiOperation({ summary: 'Full mastery overview with live FSRS retention scores' })
   getMasteryOverview(
     @Request() req: any,
-    @Query('domain') domain?: 'DSA' | 'SYSTEM_DESIGN',
+    @Query('domain') domain?: Domain,
   ) {
     return this.tracker.getMasteryOverview(req.user.sub, domain);
   }
@@ -94,7 +95,7 @@ export class TrackerController {
   @ApiOperation({ summary: "Today's personalised study plan — revisions + 1 new + 1 practice" })
   getDailyPlan(
     @Request() req: any,
-    @Query('domain') domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
+    @Query('domain') domain: Domain = 'DSA',
   ) {
     return this.tracker.getDailyPlan(req.user.sub, domain);
   }
@@ -106,7 +107,7 @@ export class TrackerController {
   @ApiOperation({ summary: 'Concepts due for review today (Smart Review session)' })
   getDueConcepts(
     @Request() req: any,
-    @Query('domain') domain?: 'DSA' | 'SYSTEM_DESIGN',
+    @Query('domain') domain?: Domain,
   ) {
     return this.tracker.getDueConcepts(req.user.sub, domain);
   }
@@ -164,7 +165,7 @@ export class TrackerController {
   @ApiQuery({ name: 'windowHours', type: 'number', required: false })
   getFadingSoon(
     @Request() req: any,
-    @Query('domain') domain: 'DSA' | 'SYSTEM_DESIGN' = 'DSA',
+    @Query('domain') domain: Domain = 'DSA',
     @Query('windowHours') windowHours?: string,
   ) {
     return this.tracker.getFadingSoon(req.user.sub, domain, windowHours ? parseInt(windowHours) : 72);
@@ -196,7 +197,7 @@ export class TrackerController {
   })
   seedAssessment(
     @Request() req: any,
-    @Body() body: { conceptId: string; conceptName: string; domain: 'DSA' | 'SYSTEM_DESIGN'; rating: number },
+    @Body() body: { conceptId: string; conceptName: string; domain: Domain; rating: number },
   ) {
     const { conceptId, conceptName, domain, rating } = body;
     if (!conceptId || rating < 1 || rating > 5) {

@@ -31,7 +31,7 @@ import {
 export class GraphService {
   private readonly logger = new Logger(GraphService.name);
 
-  constructor(private readonly neo4j: Neo4jService) {}
+  constructor(private readonly neo4j: Neo4jService) {};
 
   // ─── Full Graph ───────────────────────────────────────────────────────────
 
@@ -49,11 +49,11 @@ export class GraphService {
 
     if (!results.length) {
       return { nodes: [], edges: [] };
-    }
+    };
 
     const { nodes, edges } = results[0];
     return { nodes: nodes ?? [], edges: edges ?? [] };
-  }
+  };
 
   // ─── Concept Detail ───────────────────────────────────────────────────────
 
@@ -89,10 +89,10 @@ export class GraphService {
       // Target may be a foundation node itself — return just that concept
       const detail = await this.getConceptDetail(targetId);
       return [detail];
-    }
+    };
 
     return results[0].path;
-  }
+  };
 
   // ─── Topics ───────────────────────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ export class GraphService {
    */
   async getTopics(domain: string): Promise<TopicDto[]> {
     return this.neo4j.runQuery<TopicDto>(GET_TOPICS_WITH_COUNTS, { domain });
-  }
+  };
 
   // ─── Seed Database ────────────────────────────────────────────────────────
 
@@ -128,7 +128,7 @@ export class GraphService {
         seeded: false,
         message: `Database already has ${status.conceptCount} concepts. Use force=true to re-seed.`,
       };
-    }
+    };
 
     // Resolve the seed file relative to the monorepo root.
     // process.cwd() = apps/api when NestJS starts, so we go up two levels to the repo root.
@@ -141,7 +141,7 @@ export class GraphService {
       throw new ServiceUnavailableException(
         `Seed file not found at: ${seedFilePath}`,
       );
-    }
+    };
 
     this.logger.log(`Reading seed file from: ${seedFilePath}`);
     const cypher = fs.readFileSync(seedFilePath, 'utf-8');
@@ -175,8 +175,8 @@ export class GraphService {
       } catch (err: any) {
         failed++;
         this.logger.warn(`Statement ${executed + failed} failed: ${err.message?.slice(0, 120)}`);
-      }
-    }
+      };
+    };
 
     this.logger.log(`✅ Seed complete — ${executed} OK, ${failed} failed`);
 
@@ -192,7 +192,7 @@ export class GraphService {
       seeded: true,
       message: `Seeded ${after?.conceptCount} concepts and ${after?.topicCount} topics. (${executed} statements OK, ${failed} failed)`,
     };
-  }
+  };
 
   // ─── Seed Status ──────────────────────────────────────────────────────────
 
@@ -209,7 +209,7 @@ export class GraphService {
       topicCount: r.topicCount,
       isSeeded: r.conceptCount > 0,
     };
-  }
+  };
 
   // ─── Admin Edge Editor ────────────────────────────────────────────────────
 

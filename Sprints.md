@@ -51,7 +51,7 @@ This document outlines the end-to-end development process for the Adaptive Learn
 
 ---
 
-## ✅ Sprint 4: Adaptive Engine & Mastery Tracking — COMPLETE
+  ## ✅ Sprint 4: Adaptive Engine & Mastery Tracking — COMPLETE
 **Goal:** Make the platform truly *adaptive* by implementing spaced repetition, forgetting curves, and dynamic recommendations.
 
 > **Delivered:** FSRS-4.5 algorithm, confidence ratings (1–4 grade), Smart Review Session (`?mode=review`), Optimal Learning Window badge, radar chart mastery visualization, retention sparklines, XP streak multiplier (up to 2×), achievement system (10 types), level-up animations, weekly digest, fading-soon alerts.

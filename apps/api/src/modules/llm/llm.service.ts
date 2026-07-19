@@ -153,4 +153,21 @@ Return ONLY this JSON structure:
       return [];
     }
   }
+
+  /**
+   * Generic one-shot chat completion — used by the Explanation Tutor.
+   * Returns the assistant's text reply.
+   */
+  async chat(systemPrompt: string, userMessage: string): Promise<string> {
+    const completion = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.7,
+      max_tokens: 512,
+    });
+    return completion.choices[0]?.message?.content ?? 'I was unable to generate a response. Please try again.';
+  }
 }

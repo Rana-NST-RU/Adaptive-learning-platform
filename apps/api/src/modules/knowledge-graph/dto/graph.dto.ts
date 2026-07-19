@@ -53,17 +53,17 @@ export class ConceptEdgeDto {
 
   @ApiProperty({ enum: ['REQUIRES', 'LEADS_TO', 'RELATED_TO', 'BELONGS_TO'] })
   type: string;
-}
+};
 
 // ─── Graph Response ───────────────────────────────────────────────────────────
-
+   
 export class GraphResponseDto {
   @ApiProperty({ type: [ConceptNodeDto] })
   nodes: ConceptNodeDto[];
 
   @ApiProperty({ type: [ConceptEdgeDto] })
   edges: ConceptEdgeDto[];
-}
+};
 
 // ─── Concept Detail (with neighborhood) ──────────────────────────────────────
 
@@ -76,7 +76,7 @@ class ConceptRefDto {
 
   @ApiProperty()
   difficulty: number;
-}
+};
 
 export class ConceptDetailDto extends ConceptNodeDto {
   @ApiPropertyOptional({ example: 'Searching & Binary Search' })
@@ -106,7 +106,7 @@ export class TopicDto {
 
   @ApiProperty()
   conceptCount: number;
-}
+};
 
 // ─── Seed Status ─────────────────────────────────────────────────────────────
 
@@ -115,8 +115,8 @@ export class SeedStatusDto {
   totalNodes: number;
 
   @ApiProperty()
-  conceptCount: number;
-
+  conceptCount: number; 
+ 
   @ApiProperty()
   topicCount: number;
 
