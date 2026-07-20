@@ -25,7 +25,7 @@ export interface AuthTokens {
     isVerified: boolean;
     avatar: string | null;
   };
-};
+}
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -36,7 +36,7 @@ export class AuthService implements OnModuleInit {
     private readonly redis: RedisService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
-  ) {};
+  ) {}
 
   onModuleInit() {
     // Initialize Firebase Admin SDK (idempotent)
@@ -51,8 +51,8 @@ export class AuthService implements OnModuleInit {
         }),
       });
       this.logger.log('✅ Firebase Admin SDK initialized');
-    };
-  };
+    }
+  }
 
   // ─────────────────────────────────────────────────────────────
   // FIREBASE PHONE AUTH (Primary method — 10k SMS/month free)
@@ -73,12 +73,12 @@ export class AuthService implements OnModuleInit {
     } catch (error) {
       this.logger.warn(`Firebase token verification failed: ${error.message}`);
       throw new UnauthorizedException('Invalid or expired Firebase token');
-    };
+    }
 
     const phone = decodedToken.phone_number;
     if (!phone) {
       throw new UnauthorizedException('Token does not contain a phone number');
-    }; 
+    } 
 
     // 2. Find or create user
     let user = await this.prisma.user.findUnique({ where: { phone } });
@@ -106,10 +106,10 @@ export class AuthService implements OnModuleInit {
         where: { id: user.id },
         data: { isVerified: true },
       });
-    };
+    }
 
     return this.generateTokens(user);
-  };
+  }
 
 
   // ─────────────────────────────────────────────────────────────
@@ -152,10 +152,10 @@ export class AuthService implements OnModuleInit {
           isVerified: true,
         },
       });
-    };  
+    }  
 
     return this.generateTokens(user);
-  };
+  }
 
   // ─────────────────────────────────────────────────────────────
   // EMAIL / PASSWORD AUTH
@@ -169,7 +169,7 @@ export class AuthService implements OnModuleInit {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ConflictException('An account with this email already exists');
-    };
+    }
 
     const passwordHash = await bcrypt.hash(password, 12);
 
@@ -188,7 +188,7 @@ export class AuthService implements OnModuleInit {
     await this.redis.set(`pwd:${user.id}`, passwordHash);
 
     return this.generateTokens(user);
-  };
+  }
 
   /**
    * Validate email/password — used by LocalStrategy
@@ -202,15 +202,15 @@ export class AuthService implements OnModuleInit {
 
     const isValid = await bcrypt.compare(password, hash);
     return isValid ? user : null;
-  }; 
+  } 
 
   async loginWithEmail(email: string, password: string): Promise<AuthTokens> {
     const user = await this.validateEmailPassword(email, password);
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
-    };
+    }
     return this.generateTokens(user);
-  };
+  }
 
   // ─────────────────────────────────────────────────────────────
   // TOKEN MANAGEMENT
@@ -259,25 +259,25 @@ export class AuthService implements OnModuleInit {
         avatar: user.avatar ?? null,
       },
     };
-  };
+  }
 
   async refreshTokens(userId: string, token: string): Promise<AuthTokens> {
     const stored = await this.redis.get(`refresh:${userId}`);
     if (!stored || stored !== token) {
       throw new UnauthorizedException('Invalid or expired refresh token');
-    };
+    }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.isActive) {
       throw new UnauthorizedException('User not found or inactive');
-    };
+    }
 
     return this.generateTokens(user);
-  };
+  }
 
   async logout(userId: string): Promise<{ message: string }> {
     await this.redis.del(`refresh:${userId}`);
     return { message: 'Logged out successfully' };
-  };
-};
+  }
+}
 

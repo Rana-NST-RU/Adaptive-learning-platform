@@ -100,9 +100,9 @@ export class Neo4jService implements OnModuleInit, OnModuleDestroy {
     const obj: Record<string, any> = {};
     for (const key of record.keys) {
       obj[key as string] = this.toPlain(record.get(key as string));
-    };
+    }
     return obj as T;
-  };
+  }
 
   private toPlain(value: any): any {
     if (value === null || value === undefined) return value;
@@ -111,11 +111,11 @@ export class Neo4jService implements OnModuleInit, OnModuleDestroy {
     // Neo4j Node → plain properties object
     if (value && value.labels && value.properties) {
       return this.toPlain(value.properties);
-    };
+    }
     // Neo4j Relationship → plain object
     if (value && value.type && value.properties) {
       return { ...this.toPlain(value.properties), _type: value.type };
-    };
+    }
     // Arrays
     if (Array.isArray(value)) return value.map((v) => this.toPlain(v));
     // Plain objects
@@ -123,9 +123,9 @@ export class Neo4jService implements OnModuleInit, OnModuleDestroy {
       const result: Record<string, any> = {};
       for (const k of Object.keys(value)) {
         result[k] = this.toPlain(value[k]);
-      };
+      }
       return result;
-    };
+    }
     return value;
-  };
-};
+  }
+}

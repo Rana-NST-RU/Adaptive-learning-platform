@@ -433,7 +433,6 @@ export class AdminService {
       arr.length > 0 ? Math.round((arr.filter(a => a.isCorrect).length / arr.length) * 100) : null;
 
     const totalAttempts = (attemptStats as any)._count?.id ?? 0;
-    const correctTotal = recentAttempts.filter(a => a.isCorrect).length;
 
     return {
       user,
