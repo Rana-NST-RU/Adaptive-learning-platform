@@ -5,6 +5,7 @@ import {
   Body,
   Query,
   Request,
+  Response,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -204,5 +205,20 @@ export class TrackerController {
     }
     return this.tracker.seedSelfAssessment(req.user.sub, conceptId, conceptName, domain, rating);
   }
-}
 
+  // ─── Progress Report PDF ──────────────────────────────────────────────────
+
+  @Get('report/pdf')
+  @ApiOperation({ summary: 'Download personalised learning progress report as PDF' })
+  @ApiResponse({ status: 200, description: 'PDF file stream' })
+  async downloadReport(@Request() req: any, @Response() res: any) {
+    const pdf = await this.tracker.generateProgressReport(req.user.sub);
+    const filename = `alos-progress-${new Date().toISOString().slice(0, 10)}.pdf`;
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdf.length,
+    });
+    res.end(pdf);
+  }
+}

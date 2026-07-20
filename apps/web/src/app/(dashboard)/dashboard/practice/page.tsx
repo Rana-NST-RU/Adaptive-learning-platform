@@ -380,7 +380,7 @@ export default function PracticePage() {
         };
         // ─── Session Replay: persist to sessionStorage ──────────────────────────
         const replayEntry = {
-          question: currentQ,
+          question: q,
           userAnswer: selectedOption ?? tfAnswer ?? shortAnswer,
           result: res.data,
           timeTakenMs,

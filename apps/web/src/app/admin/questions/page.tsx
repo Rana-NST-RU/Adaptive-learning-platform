@@ -95,12 +95,17 @@ export default function AdminQuestionsPage() {
 
   const handleGenerate = async () => {
     if (!genConceptId) return showToast('Select a concept', false);
+    const topic = topics.find(t => t.topicId === genConceptId);
+    if (!topic) return showToast('Selected concept not found', false);
     setGenLoading(true);
     try {
       const res = await questionsApi.generate({
         conceptId: genConceptId,
+        conceptName: topic.topicName,
+        domain: topic.domain,
         difficulty: genDifficulty,
         count: genCount,
+        questionTypes: ['MCQ', 'TRUE_FALSE', 'SHORT_ANSWER'],
       });
       const generated = (res.data as unknown[]).length;
       showToast(`✨ Generated ${generated} new question${generated !== 1 ? 's' : ''}!`);

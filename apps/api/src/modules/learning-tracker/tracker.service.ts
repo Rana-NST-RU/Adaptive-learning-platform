@@ -1077,6 +1077,148 @@ export class TrackerService {
       },
     });
   }
+
+  // ─── Progress Report PDF ──────────────────────────────────────────────────
+
+  async generateProgressReport(userId: string): Promise<Buffer> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const PDFDocument = require('pdfkit');
+
+    const [user, profile, streak, masteries, recentAttempts] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, createdAt: true } }),
+      this.prisma.userProfile.findUnique({ where: { userId } }),
+      this.prisma.learningStreak.findUnique({ where: { userId } }),
+      this.prisma.conceptMastery.findMany({
+        where: { userId },
+        orderBy: [{ masteryLevel: 'desc' }, { masteryScore: 'desc' }],
+        take: 20,
+      }),
+      this.prisma.questionAttempt.findMany({
+        where: { userId },
+        orderBy: { timestamp: 'desc' },
+        take: 60,
+        select: { isCorrect: true, score: true, timestamp: true },
+      }),
+    ]);
+
+    const totalAttempts = recentAttempts.length;
+    const correctAttempts = recentAttempts.filter(a => a.isCorrect).length;
+    const accuracy = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 0;
+    const masteredCount = masteries.filter(m => m.masteryLevel >= 3).length;
+    const LEVEL_NAMES = ['', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
+    const levelName = LEVEL_NAMES[profile?.currentLevel ?? 1] ?? 'Beginner';
+
+    return new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'A4', margin: 50 });
+      const chunks: Buffer[] = [];
+      doc.on('data', (c: Buffer) => chunks.push(c));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const C = { indigo: '#6366f1', purple: '#8b5cf6', slate: '#64748b', dark: '#0f172a', light: '#f8fafc', green: '#10b981', amber: '#f59e0b', red: '#ef4444' };
+
+      // ── Header bar ──────────────────────────────────────────────────────────
+      doc.rect(0, 0, 595, 90).fill(C.dark);
+      doc.fontSize(22).fillColor('#fff').font('Helvetica-Bold')
+        .text('ALOS — Learning Progress Report', 50, 28);
+      doc.fontSize(10).fillColor('#94a3b8').font('Helvetica')
+        .text(`Generated ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}`, 50, 56);
+
+      // ── User info ────────────────────────────────────────────────────────────
+      doc.moveDown(2);
+      doc.fontSize(14).fillColor(C.dark).font('Helvetica-Bold').text(user?.name ?? 'Student', 50, 110);
+      doc.fontSize(10).fillColor(C.slate).font('Helvetica').text(user?.email ?? '', 50, 128);
+      doc.fontSize(10).fillColor(C.slate).text(`Member since ${user?.createdAt?.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) ?? '-'}`, 50, 143);
+
+      // ── Divider ──────────────────────────────────────────────────────────────
+      doc.moveTo(50, 165).lineTo(545, 165).strokeColor('#e2e8f0').lineWidth(1).stroke();
+
+      // ── KPI cards ────────────────────────────────────────────────────────────
+      const kpis = [
+        { label: 'Total XP', value: String(profile?.totalXP ?? 0) },
+        { label: 'Level', value: `${profile?.currentLevel ?? 1} · ${levelName}` },
+        { label: 'Streak', value: `${streak?.currentStreak ?? 0} days` },
+        { label: 'Accuracy', value: `${accuracy}%` },
+        { label: 'Concepts', value: String(masteries.length) },
+        { label: 'Mastered', value: String(masteredCount) },
+      ];
+      const cardW = 82, cardH = 52, startX = 50, startY = 178, gap = 9;
+      kpis.forEach((kpi, i) => {
+        const x = startX + i * (cardW + gap);
+        doc.roundedRect(x, startY, cardW, cardH, 6).fill('#f1f5f9');
+        doc.fontSize(18).fillColor(C.indigo).font('Helvetica-Bold').text(kpi.value, x + 6, startY + 8, { width: cardW - 12, align: 'center' });
+        doc.fontSize(8).fillColor(C.slate).font('Helvetica').text(kpi.label, x + 6, startY + 34, { width: cardW - 12, align: 'center' });
+      });
+
+      // ── Streak Details ────────────────────────────────────────────────────────
+      doc.moveTo(50, 242).lineTo(545, 242).strokeColor('#e2e8f0').lineWidth(1).stroke();
+      doc.fontSize(12).fillColor(C.dark).font('Helvetica-Bold').text('🔥 Streak Details', 50, 252);
+      doc.fontSize(10).fillColor(C.slate).font('Helvetica')
+        .text(`Current streak: ${streak?.currentStreak ?? 0} days   |   Longest streak: ${streak?.longestStreak ?? 0} days   |   Streak freezes remaining: ${streak?.streakFreezes ?? 2}`, 50, 270);
+
+      // ── Top Concept Masteries ────────────────────────────────────────────────
+      doc.moveTo(50, 292).lineTo(545, 292).strokeColor('#e2e8f0').lineWidth(1).stroke();
+      doc.fontSize(12).fillColor(C.dark).font('Helvetica-Bold').text('🧠 Concept Mastery (Top 15)', 50, 302);
+
+      const masteryLevelNames = ['Not Started', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
+      const topMasteries = masteries.slice(0, 15);
+      let rowY = 320;
+
+      // Table header
+      doc.fontSize(8).fillColor(C.slate).font('Helvetica-Bold');
+      doc.text('CONCEPT', 50, rowY).text('DOMAIN', 240, rowY).text('LEVEL', 320, rowY).text('SCORE', 390, rowY).text('ACCURACY', 450, rowY);
+      rowY += 14;
+      doc.moveTo(50, rowY).lineTo(545, rowY).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+      rowY += 6;
+
+      topMasteries.forEach((m, i) => {
+        const bg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+        doc.rect(50, rowY - 2, 495, 16).fill(bg);
+
+        const levelColor = [C.slate, C.indigo, C.purple, C.amber, C.green][m.masteryLevel] ?? C.slate;
+        const acc = m.totalAttempts > 0 ? Math.round((m.correctAttempts / m.totalAttempts) * 100) : 0;
+
+        doc.fontSize(8).fillColor(C.dark).font('Helvetica').text(m.conceptName.slice(0, 28), 52, rowY, { width: 185 });
+        doc.fillColor(C.slate).text(m.domain === 'DSA' ? 'DSA' : 'Sys Design', 240, rowY);
+        doc.fillColor(levelColor).font('Helvetica-Bold').text(masteryLevelNames[m.masteryLevel] ?? '-', 320, rowY);
+        doc.fillColor(C.slate).font('Helvetica').text(`${Math.round((m.masteryScore ?? 0) * 100)}%`, 390, rowY);
+        doc.text(`${acc}%`, 450, rowY);
+        rowY += 16;
+      });
+
+      // ── Recent Activity ──────────────────────────────────────────────────────
+      rowY += 10;
+      if (rowY > 680) { doc.addPage(); rowY = 50; }
+      doc.moveTo(50, rowY).lineTo(545, rowY).strokeColor('#e2e8f0').lineWidth(1).stroke();
+      rowY += 10;
+      doc.fontSize(12).fillColor(C.dark).font('Helvetica-Bold').text('📊 Performance Summary (Last 60 Attempts)', 50, rowY);
+      rowY += 18;
+
+      // Domain summary from mastery data (which has domain field)
+      const dsaMasteries = masteries.filter(m => m.domain === 'DSA');
+      const sdMasteries = masteries.filter(m => m.domain === 'SYSTEM_DESIGN');
+      const dsaMastered = dsaMasteries.filter(m => m.masteryLevel >= 3).length;
+      const sdMastered = sdMasteries.filter(m => m.masteryLevel >= 3).length;
+
+      doc.fontSize(10).fillColor(C.slate).font('Helvetica');
+      doc.text(`Total attempts: ${totalAttempts}   |   Correct: ${correctAttempts}   |   Overall accuracy: ${accuracy}%`, 50, rowY);
+      rowY += 16;
+      if (dsaMasteries.length > 0) {
+        doc.text(`DSA: ${dsaMasteries.length} concepts tracked, ${dsaMastered} mastered`, 50, rowY);
+        rowY += 14;
+      }
+      if (sdMasteries.length > 0) {
+        doc.text(`System Design: ${sdMasteries.length} concepts tracked, ${sdMastered} mastered`, 50, rowY);
+        rowY += 14;
+      }
+
+      // ── Footer ────────────────────────────────────────────────────────────────
+      doc.fontSize(8).fillColor('#cbd5e1').font('Helvetica')
+        .text('ALOS — Adaptive Learning Operating System   |   Confidential', 50, 800, { align: 'center', width: 495 });
+
+      doc.end();
+    });
+  }
 }
 
 
