@@ -524,6 +524,19 @@ export const trackerApi = {
   /** Seed FSRS with self-assessment rating (1-5) before first practice */
   seedAssessment: (conceptId: string, conceptName: string, domain: 'DSA' | 'SYSTEM_DESIGN', rating: number) =>
     apiClient.post('/tracker/seed-assessment', { conceptId, conceptName, domain, rating }),
+
+  /** Download personalised PDF progress report — triggers browser file save */
+  downloadReport: async (): Promise<void> => {
+    const res = await apiClient.get('/tracker/report/pdf', { responseType: 'blob' });
+    const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `alos-progress-${new Date().toISOString().slice(0, 10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

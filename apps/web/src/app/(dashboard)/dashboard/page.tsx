@@ -193,6 +193,7 @@ function FadingSoonBanner({ items }: { items: FadingSoonItem[] }) {
 export default function DashboardPage() {
   const [user, setUser] = useState<{ name?: string } | null>(null);
   const [time, setTime] = useState(new Date());
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [plan, setPlan] = useState<{ totalEstimatedMins: number; multiplier: number; streak: number; revisions: any[]; learnNew: any; practice: any } | null>(null);
@@ -313,6 +314,40 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+
+        {/* Export PDF Report */}
+        <button
+          id="export-report-btn"
+          onClick={async () => {
+            setPdfLoading(true);
+            try { await trackerApi.downloadReport(); }
+            catch { /* silently ignore */ }
+            finally { setPdfLoading(false); }
+          }}
+          disabled={pdfLoading}
+          title="Download your personalised progress report as PDF"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 7,
+            padding: '9px 18px', borderRadius: 12,
+            cursor: pdfLoading ? 'default' : 'pointer',
+            background: pdfLoading ? 'rgba(99,102,241,0.06)' : 'rgba(99,102,241,0.12)',
+            border: '1px solid rgba(99,102,241,0.3)',
+            color: pdfLoading ? '#6366f1aa' : '#a5b4fc',
+            fontWeight: 700, fontSize: 13,
+            transition: 'all 0.2s',
+          }}
+        >
+          {pdfLoading ? (
+            <>
+              <span style={{
+                display: 'inline-block', width: 13, height: 13,
+                border: '2px solid #6366f1', borderTopColor: 'transparent',
+                borderRadius: '50%', animation: 'spin 0.7s linear infinite',
+              }} />
+              Generating…
+            </>
+          ) : <>📄 Export Report</>}
+        </button>
       </div>
 
       {/* Live Stats Grid */}
