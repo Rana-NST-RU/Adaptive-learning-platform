@@ -111,7 +111,7 @@ export class UsersService {
 
   // ─── Leaderboard ─────────────────────────────────────────────
 
-  async getLeaderboard(requestingUserId: string, domain?: 'DSA' | 'SYSTEM_DESIGN') {
+  async getLeaderboard(requestingUserId: string, _domain?: 'DSA' | 'SYSTEM_DESIGN') {
     // Fetch top 50 users by totalXP from UserProfile
     const profiles = await this.prisma.userProfile.findMany({
       take: 50,

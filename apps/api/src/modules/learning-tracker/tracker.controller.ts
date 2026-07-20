@@ -8,7 +8,6 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  Param,
   BadRequestException,
 } from '@nestjs/common';
 import {
@@ -17,11 +16,11 @@ import {
   ApiOperation,
   ApiQuery,
   ApiResponse,
+  ApiProperty,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TrackerService } from './tracker.service';
 import { IsInt, Min, Max } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
 import { Domain } from '@prisma/client';
 
 class RateConfidenceDto {

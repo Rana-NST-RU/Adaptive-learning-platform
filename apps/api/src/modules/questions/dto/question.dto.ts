@@ -6,7 +6,6 @@ import {
   IsArray,
   Min,
   Max,
-  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { QuestionType, Difficulty, Domain } from '@prisma/client';
