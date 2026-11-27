@@ -40,8 +40,6 @@ const QUESTIONS_PER_SESSION = 25;
 const ITEMS_PER_CONCEPT = 16;
 const SECONDS_PER_QUESTION = 90;
 const QUITS_TO_DROP_OUT = 2;
-/** Regression floor: the engine's dropout is currently higher than random's (item-calibration drift, see report). */
-const DROPOUT_GAP_FLOOR = 0.35;
 
 type PolicyName = 'engine' | 'random' | 'fixed-order' | 'mastery-no-spacing';
 const POLICIES: PolicyName[] = ['engine', 'random', 'fixed-order', 'mastery-no-spacing'];
@@ -276,17 +274,19 @@ const rel = reliability(e.predicted, e.outcomes);
 // Gates are regression floors set below the worst of seeds 2026, 7 and 99 at
 // 150 learners (the run is seeded, so a breach means behaviour changed). Targets are the aspirations
 // in docs/EVALS.md §1, tracked but not gating until the engine meets them.
+// Re-set in Step 12 (learning-aware Elo): every outcome floor rose; ECE and next-answer AUC
+// floors were loosened on purpose, see the note in the report.
 const metrics: Metric[] = [
-  { name: 'Skill gain: engine − best baseline', value: gain(e) - best(gain), threshold: ['>=', 0.2], note: 'logits' },
-  { name: 'Concepts mastered: engine ÷ best baseline', value: mastered(e) / best(mastered), threshold: ['>=', 1.3], note: 'ratio' },
-  { name: '30-day recall: engine − best baseline', value: ret30(e) - best(ret30), threshold: ['>=', 0.01], format: 'pct' },
-  { name: 'Mastery-estimate AUC', value: auc(e.masteryScores, e.masteryLabels), threshold: ['>=', 0.68], target: ['>=', 0.85] },
-  { name: 'Next-answer AUC', value: auc(e.predicted, e.outcomes), threshold: ['>=', 0.6], target: ['>=', 0.75], note: 'compressed by adaptive selection' },
-  { name: 'Next-answer calibration error (ECE)', value: rel.ece, threshold: ['<=', 0.08], target: ['<=', 0.03] },
-  { name: 'ZPD tracking |realised − target|', value: mean(e.zpdGap), threshold: ['<=', 0.25], target: ['<=', 0.08] },
-  { name: 'Item difficulty bias after all learners (engine)', value: e.itemBias.at(-1)!, threshold: ['>=', -1.0], target: ['>=', -0.2], note: 'estimated − true, logits' },
+  { name: 'Skill gain: engine − best baseline', value: gain(e) - best(gain), threshold: ['>=', 0.6], note: 'logits' },
+  { name: 'Concepts mastered: engine ÷ best baseline', value: mastered(e) / best(mastered), threshold: ['>=', 2.8], note: 'ratio' },
+  { name: '30-day recall: engine − best baseline', value: ret30(e) - best(ret30), threshold: ['>=', 0.09], format: 'pct' },
+  { name: 'Mastery-estimate AUC', value: auc(e.masteryScores, e.masteryLabels), threshold: ['>=', 0.75], target: ['>=', 0.85] },
+  { name: 'Next-answer AUC', value: auc(e.predicted, e.outcomes), threshold: ['>=', 0.55], target: ['>=', 0.75], note: 'compressed by adaptive selection' },
+  { name: 'Next-answer calibration error (ECE)', value: rel.ece, threshold: ['<=', 0.1], target: ['<=', 0.03] },
+  { name: 'ZPD tracking |realised − target|', value: mean(e.zpdGap), threshold: ['<=', 0.12], target: ['<=', 0.08] },
+  { name: 'Item difficulty bias after all learners (engine)', value: e.itemBias.at(-1)!, threshold: ['>=', -0.4], target: ['>=', -0.2], note: 'estimated − true, logits' },
   { name: 'Dropout', value: dropout(e), format: 'pct' },
-  { name: 'Dropout: engine − random', value: dropout(e) - dropout(results.random), threshold: ['<=', DROPOUT_GAP_FLOOR], target: ['<=', -0.3 * dropout(results.random)], format: 'pct' },
+  { name: 'Dropout: engine − random', value: dropout(e) - dropout(results.random), threshold: ['<=', -0.2], target: ['<=', -0.3 * dropout(results.random)], format: 'pct' },
   { name: 'Sessions quit from boredom (engine)', value: e.quitReasons.bored!, format: 'int' },
 ];
 
@@ -338,7 +338,8 @@ finish({
   notes: [
     'Ground truth: a concept is mastered when P(correct on an average item, no guessing) ≥ 0.8. Recall @Nd is that probability averaged over all 12 concepts N days after the last session.',
     'Learners quit a session after too many wrong answers in a row (frustration) or too many trivially easy ones (boredom); two quits = dropout.',
-    'Known issue (found by this suite): under adaptive selection the shared item difficulty estimates drift downward as learners pass through (each new learner starts at ability 0), and dropout from boredom rises with it. Random selection shows no drift. Tracked by item bias, ECE and ZPD tracking; fix belongs in the engine (e.g. slow item updates after N answers, seed new-concept ability from the other concepts of the same learner).',
+    'Item-calibration drift (found by this suite, fixed in Step 12): plain Elo booked learning as item easiness, so under adaptive selection the most-served items drifted ~3.8 logits too easy, success ran at 82% against a 72% target and boredom quits drove dropout to 14 points above random. The engine now tracks learning velocity and holds item updates while a learner\u2019s residuals show their estimate is behind (packages/engine/src/elo.ts).',
+    'Trade-off accepted in Step 12: next-answer ECE rose from ~0.05 to ~0.08–0.09 and next-answer AUC from ~0.64 to ~0.60. The old ECE looked better because drifted items absorbed the lag; what remains is a steady ~5-point under-prediction for fast learners and off-target picks when a concept\u2019s bank runs short. Floors were loosened for these two only.',
     'The simulator is a model of learning, not learning itself: use it to compare policy changes, then confirm on real learners (EVALS §8).',
   ],
 });
