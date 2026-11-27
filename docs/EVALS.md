@@ -29,7 +29,7 @@ Evals are code. They live in `evals/` and run with `npm run eval:<suite>`. Each 
 
 ## 1. Engine (deterministic, every commit)
 
-**Unit tests (vitest):** BKT posterior monotonicity and bounds; the Elo update direction and its uncertainty decay; FSRS grade mapping; affect detector fixtures (scripted answer sequences → expected state); the ZPD target staying within bounds; policy invariants (never serves a locked concept; interleaving limit; due reviews surface when R < 0.9).
+**Unit tests (vitest):** BKT posterior monotonicity and bounds; the Elo update direction and its uncertainty decay, the residual gate, the velocity cap, and a no-drift test under adaptive selection; FSRS grade mapping; affect detector fixtures (scripted answer sequences → expected state); the ZPD target staying within bounds; policy invariants (never serves a locked concept; interleaving limit; due reviews surface when R < 0.9).
 
 **Simulated-learner study:** `evals/sim/` generates synthetic learners whose ground truth we know: a latent skill per concept, learning rate, forgetting rate, slip/guess, plus affect traits (quits after N failures, bored after M easy items). We then run the full policy against them and measure:
 
@@ -52,16 +52,19 @@ Evals are code. They live in `evals/` and run with `npm run eval:<suite>`. Each 
 
 **Full study (`evals/src/sim`, Step 11).** 150 simulated learners (novice, intermediate and uneven archetypes) work through the 12-concept seed course over six spaced sessions (days 0, 1, 3, 6, 10, 15; up to 25 questions each), under four policies: the engine, random order, fixed curriculum order, and mastery-threshold without spacing. Learners forget between sessions (spacing raises stability), learn little while prerequisites are weak, quit a session after too many wrong answers in a row (frustration) or too many trivially easy ones (boredom), and drop out after two quits. The item bank is shared across learners, and the engine calibrates item difficulty online, as in production. The CI gates are floors that hold across all three seeds:
 
-| Outcome | Engine vs the best baseline (range over seeds 2026, 7, 99) |
-|---|---|
-| True-skill gain | +0.27 to +0.32 logits |
-| Concepts mastered (ground truth) | 1.6× to 1.9× |
-| Recall 30 days after the last session | +2.1 to +2.9 points |
-| Dropout (vs random order) | **+14 to +29 points worse** |
+| Outcome | Engine vs the best baseline (range over seeds 2026, 7, 99) | Before Step 12 |
+|---|---|---|
+| True-skill gain | +0.87 to +0.94 logits | +0.27 to +0.32 |
+| Concepts mastered (ground truth) | 3.6× to 4.2× | 1.6× to 1.9× |
+| Recall 30 days after the last session | +11.7 to +13.1 points | +2.1 to +2.9 |
+| Dropout (vs random order) | **27 to 37 points better** | 14 to 29 points worse |
+| Item difficulty bias after 150 learners | −0.22 to −0.26 logits | −0.80 to −0.86 |
+| Next-answer calibration error (ECE) | 0.081 to 0.090 | ≈ 0.05 |
 
-**What the study found (open issues, tracked by the suite):**
-- **Item calibration drifts under adaptive selection.** Shared item difficulty estimates drift steadily downward as learners pass through (≈ −0.7 → −0.9 logits after 150 learners). Under random selection there is no drift. Every new learner starts at ability 0, and the engine's adaptive choices bias the Elo updates. With it, the engine's predictions run pessimistic (it predicts ≈ 74% success, learners get ≈ 81%), it serves items easier than intended, and boredom quits push dropout up as more learners use the bank. Likely fixes for a future engine step: slow item updates once an item has enough answers, seed a learner's ability on a new concept from their other concepts, and re-run this suite to confirm.
-- **Mastery-estimate AUC (≈ 0.72–0.76) and next-answer AUC (≈ 0.64) are below the targets above.** Next-answer AUC is partly compressed by adaptive selection itself (predictions cluster around the target), so it is gated as a regression floor and tracked against the target.
+**What the study found:**
+- **Item calibration drifted under adaptive selection (fixed in Step 12).** Plain Elo assumes the learner stands still. Simulated learners improve while they practise, the ability estimate trailed behind, and every answer a learner beat its prediction on was booked as "this item is easier than we thought". Under adaptive selection that is a feedback loop: an item that looks easy is served to improving learners, who beat it, so it looks easier still. The mean bias (−0.85 logits) hid the worst of it: the 28 most-served items ended **3.8 logits too easy**. Success ran at 82% against a 72% target, boredom caused 180 quit sessions, and engine dropout was worse than random order's. Waiting for a learner's estimate to settle, or slowing item updates alone, did not help: the bias comes from learning, not cold starts. The fix (`packages/engine/src/elo.ts`) makes Elo learning-aware: a velocity filter lets ability keep up with an improving learner, and item updates are held while the learner's running residual shows their own estimate is behind. Item steps also shrink faster with exposure. A unit test reproduces the loop: plain Elo drifts that test bank by −2.2 logits.
+- **Trade-off accepted:** next-answer ECE rose from ≈ 0.05 to 0.08–0.09, and next-answer AUC from ≈ 0.64 to ≈ 0.60. The old ECE looked better because drifted items absorbed the lag. What remains is a steady ≈ 5-point under-prediction for fast learners, plus off-target picks when no fresh item in a concept's bank is close to the target. The floors for those two metrics were loosened; every outcome floor was raised. Not adopted after testing: residual centering for item updates (lowest bias, but ECE ≈ 0.10), and resetting velocity between sessions (worse on every seed).
+- **Mastery-estimate AUC (≈ 0.80–0.88, up from 0.72–0.76) and next-answer AUC (≈ 0.60) are below the targets above.** Next-answer AUC is partly compressed by adaptive selection itself (predictions cluster around the target), so it is gated as a regression floor and tracked against the target.
 - The simulator also exposed a flaw in itself: its first forgetting model let practice push a learner below their prior knowledge. Simulator assumptions need the same scrutiny as the engine.
 
 **Real data check (later):** fit and score the engine on a public tutoring log dataset (e.g. ASSISTments) for next-answer AUC, to keep the simulator honest.

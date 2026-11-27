@@ -262,7 +262,7 @@ flowchart LR
 | Component | Model | Why |
 |---|---|---|
 | Knowledge | Bayesian Knowledge Tracing per concept; guess follows the format (1/options); hints weaken correct evidence; graph propagation to prerequisites/dependents | Interpretable, cold-start friendly, proven |
-| Ability & item difficulty | Elo / 1PL-IRT with uncertainty-decaying K, guess-corrected | Calibrates LLM-written items from real answers; drives ZPD item choice |
+| Ability & item difficulty | Learning-aware Elo / 1PL-IRT: uncertainty-decaying K, guess-corrected, a learning-velocity filter on ability, and item updates held while a learner's residuals show their estimate is behind | Calibrates LLM-written items from real answers without booking learning as item easiness (plain Elo drifted items 3.8 logits under adaptive selection, EVALS §1); drives ZPD item choice |
 | Memory | FSRS-6 (`ts-fsrs`); grade from correctness × confidence × hints × speed | State-of-the-art spaced repetition |
 | Affect | Sensor-free log detectors: frustrated / bored / confused / disengaged / flow | Drives UX mode and ZPD target |
 | ZPD controller | Target P(correct) ≈ 0.72, moved by affect and the recent success rate (Pelánek-style correction) | Practice ≠ testing; learners prefer and benefit from ~65–75% |
@@ -293,7 +293,7 @@ Mastery shown to the learner = P(known) × current retrievability, so mastery de
 |---|---|
 | `users`, `learner_profiles` | identity, goals, interests, preferences, long-term agent memory (JSON) |
 | `courses`, `concepts`, `concept_edges` | concept graph (prerequisite / related), objectives, misconception catalogue |
-| `enrollments`, `concept_states` | per-learner state: P(known), ability, FSRS card, streaks, misconception counts |
+| `enrollments`, `concept_states` | per-learner state: P(known), ability, learning trend and velocity, FSRS card, streaks, misconception counts |
 | `items` | item bank: stem, options with misconception tags and feedback, key, hints ladder, Elo difficulty, provenance, citations, verifier notes, status |
 | `attempts` | every answer: response, correctness, confidence, latency, hints, misconception, state before/after |
 | `sessions` | plan, UX policy history, summary |
