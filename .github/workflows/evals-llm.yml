@@ -1,0 +1,55 @@
+# LLM agent evals (Item Verifier, Learning Director). These call Claude and
+# cost money: each suite stops at EVAL_MAX_USD. They run nightly, on demand,
+# and on pull requests that change agent code or the evals themselves.
+# Needs the repository secret ANTHROPIC_API_KEY; without it the suites skip.
+name: LLM evals
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      max_usd:
+        description: Spend cap per suite (USD)
+        default: '3'
+      repeats:
+        description: Director repeats per fixture (consistency)
+        default: '3'
+  pull_request:
+    paths:
+      - 'apps/web/src/server/agents/**'
+      - 'evals/**'
+
+concurrency:
+  group: llm-evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  llm:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      EVAL_MAX_USD: ${{ inputs.max_usd || '3' }}
+      EVAL_REPEATS: ${{ inputs.repeats || (github.event_name == 'schedule' && '3') || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @alp/engine
+      - name: Eval — Item Verifier
+        run: npm run eval:verifier
+      - name: Eval — Learning Director
+        if: ${{ !cancelled() }}
+        run: npm run eval:director
+      - name: Eval reports to job summary
+        if: ${{ !cancelled() }}
+        run: cat evals/reports/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: llm-eval-reports
+          path: evals/reports/
+          if-no-files-found: ignore

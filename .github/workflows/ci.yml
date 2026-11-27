@@ -1,0 +1,39 @@
+# Every push and pull request: types, unit tests, and the free eval suites
+# (simulated learners + deterministic guards). No API key needed.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @alp/engine
+      - name: Generate Next.js route types
+        run: npx next typegen
+        working-directory: apps/web
+      - run: npm run typecheck
+      - run: npm test
+      - name: Eval — simulated learners
+        run: npm run eval:sim
+      - name: Eval — deterministic guards
+        if: ${{ !cancelled() }}
+        run: npm run eval:guards
+      - name: Eval reports to job summary
+        if: ${{ !cancelled() }}
+        run: cat evals/reports/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: eval-reports
+          path: evals/reports/
+          if-no-files-found: ignore
