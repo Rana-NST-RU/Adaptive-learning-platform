@@ -1,9 +1,9 @@
-import { eq } from 'drizzle-orm';
 import { db, schema } from '@/server/db';
 import { requireUser } from '@/server/auth';
 import { handler } from '@/server/http';
+import { visibleCourses } from '@/server/learner/visibility';
 
 export const GET = handler(async () => {
-  await requireUser();
-  return db.query.courses.findMany({ where: eq(schema.courses.status, 'ready') });
+  const user = await requireUser();
+  return db.query.courses.findMany({ where: visibleCourses(user.id) });
 });

@@ -97,7 +97,7 @@ async function getSession(userId: string, sessionId: string) {
 
 export async function enroll(userId: string, courseId: string) {
   const course = await db.query.courses.findFirst({ where: eq(schema.courses.id, courseId) });
-  if (!course || course.status !== 'ready') throw new HttpError(404, 'Course not available');
+  if (!course || course.status !== 'ready' || (course.ownerId && course.ownerId !== userId)) throw new HttpError(404, 'Course not available');
   await db.insert(schema.enrollments).values({ userId, courseId }).onConflictDoNothing();
   const { nodes } = await loadGraph(courseId);
   await loadStates(userId, nodes.map((n) => n.id)); // initialise priors
