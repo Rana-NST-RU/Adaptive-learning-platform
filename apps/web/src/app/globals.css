@@ -1,0 +1,63 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* Adaptive UX: the engine's UxPolicy.mode sets data-mode on the session root.
+   Each mode tunes accent, surface and pace cues, not just question difficulty. */
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --ink: #1d1d1b;
+  --muted: #6b6b66;
+  --line: #e4e3de;
+  --accent: #3b5bdb;
+  --accent-soft: #e8ecfb;
+  --good: #2b8a3e;
+  --good-soft: #e6f4ea;
+  --bad: #c92a2a;
+  --bad-soft: #fdecec;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141413;
+    --surface: #1d1d1b;
+    --ink: #ecebe6;
+    --muted: #a3a29b;
+    --line: #2e2e2b;
+    --accent: #7b93f0;
+    --accent-soft: #232a45;
+    --good: #69c37b;
+    --good-soft: #1b2f20;
+    --bad: #f07b7b;
+    --bad-soft: #3a1f1f;
+  }
+}
+[data-mode='recovery'] { --accent: #2f9e8f; --accent-soft: #e3f4f1; --bg: #f4f8f7; }
+[data-mode='challenge'] { --accent: #d9480f; --accent-soft: #fdeee6; }
+[data-mode='review'] { --accent: #7048e8; --accent-soft: #efeafd; }
+[data-mode='explore'] { --accent: #1c7ed6; --accent-soft: #e5f1fc; }
+@media (prefers-color-scheme: dark) {
+  [data-mode='recovery'] { --accent: #63c7b8; --accent-soft: #19302c; --bg: #121716; }
+  [data-mode='challenge'] { --accent: #f08c5a; --accent-soft: #3a261b; }
+  [data-mode='review'] { --accent: #a48af5; --accent-soft: #2a2340; }
+  [data-mode='explore'] { --accent: #5fa8ec; --accent-soft: #1b2b3d; }
+}
+
+html, body { background: var(--bg); color: var(--ink); }
+body { transition: background-color 400ms ease; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.btn { border-radius: 10px; padding: 0.55rem 1rem; font-weight: 600; transition: all 150ms ease; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:disabled { opacity: 0.5; }
+.btn-ghost { color: var(--muted); }
+.btn-ghost:hover { color: var(--ink); background: var(--accent-soft); }
+.muted { color: var(--muted); }
+.input { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.55rem 0.75rem; width: 100%; }
+.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.85rem; }
+.chip[data-on='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

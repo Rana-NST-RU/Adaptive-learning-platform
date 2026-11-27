@@ -19,3 +19,20 @@ An adaptive learning platform where a **deterministic learner model** tracks wha
 | Agents | Anthropic SDK Tool Runner: Director, Curriculum Architect, Diagnostician, Item Author, Item Verifier, Tutor, Coach, Librarian |
 | Data | PostgreSQL (+ pgvector) via Drizzle |
 | Evals | simulated learners, item/tutor/RAG/director suites |
+
+## Run locally
+
+Requirements: Node ≥ 20.9, PostgreSQL 15+ with the `pgvector` extension available.
+
+```bash
+npm install
+createdb alp_dev
+cp .env.example apps/web/.env.local   # then set AUTH_SECRET (and ANTHROPIC_API_KEY to enable agents)
+npm run db:migrate -w @alp/web        # or: npm run db:push
+npm run db:seed
+npm run dev                           # http://localhost:3000
+npm test                              # engine + web tests (incl. simulated-learner study)
+npm run agents:author -w @alp/web -- two-pointers 2   # run Item Author → Verifier for one concept (uses real tokens)
+```
+
+Without an Anthropic credential the platform runs on the seeded item bank: the learner model and adaptive UX work fully, and agents switch on once a key is configured.
