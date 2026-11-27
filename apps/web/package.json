@@ -13,7 +13,9 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "test": "vitest run",
+    "agents:author": "tsx --conditions=react-server scripts/agent-author.ts"
   },
   "dependencies": {
     "@alp/engine": "*",
@@ -37,6 +39,7 @@
     "drizzle-kit": "^0.31.11",
     "tailwindcss": "^4.3.5",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.0"
   }
 }

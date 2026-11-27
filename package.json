@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "npm run dev -w @alp/web",
     "build": "npm run build -w @alp/engine && npm run build -w @alp/web",
-    "test": "npm run test -w @alp/engine",
+    "test": "npm run test -w @alp/engine && npm run test -w @alp/web",
     "typecheck": "npm run typecheck -w @alp/engine && npm run typecheck -w @alp/web",
     "db:push": "npm run db:push -w @alp/web",
     "db:seed": "npm run db:seed -w @alp/web"
