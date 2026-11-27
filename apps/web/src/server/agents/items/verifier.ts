@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'server-only';
-import { structured, type RunContext } from '../runtime';
+import { structured, type RunContext } from '../llm';
 import { Audit, BlindSolve, decide, type Decision, type DraftItem } from './rules';
 import type { RetrievedChunk } from '../../rag/retrieve';
 
