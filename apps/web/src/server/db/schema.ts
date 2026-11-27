@@ -137,6 +137,10 @@ export const conceptStates = pgTable(
     conceptId: uuid('concept_id').notNull().references(() => concepts.id, { onDelete: 'cascade' }),
     pKnown: real('p_known').notNull(),
     ability: real('ability').notNull().default(0),
+    /** Running mean of answer residuals; gates item calibration (engine/elo.ts). */
+    trend: real('trend').notNull().default(0),
+    /** Learning velocity, logits per answer. */
+    velocity: real('velocity').notNull().default(0),
     attempts: integer('attempts').notNull().default(0),
     correct: integer('correct').notNull().default(0),
     streak: integer('streak').notNull().default(0),

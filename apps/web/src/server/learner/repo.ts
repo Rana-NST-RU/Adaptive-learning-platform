@@ -44,6 +44,8 @@ function toState(r: typeof schema.conceptStates.$inferSelect): ConceptState {
     conceptId: r.conceptId,
     pKnown: r.pKnown,
     ability: r.ability,
+    trend: r.trend,
+    velocity: r.velocity,
     attempts: r.attempts,
     correct: r.correct,
     streak: r.streak,
@@ -80,6 +82,8 @@ export async function saveState(userId: string, s: ConceptState) {
   const values = {
     pKnown: s.pKnown,
     ability: s.ability,
+    trend: s.trend ?? 0,
+    velocity: s.velocity ?? 0,
     attempts: s.attempts,
     correct: s.correct,
     streak: s.streak,
