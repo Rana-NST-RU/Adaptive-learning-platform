@@ -18,7 +18,8 @@ export type ConductorEvent =
   | { type: 'affect_changed'; userId: string; sessionId: string; from: string; to: string }
   | { type: 'mastered'; userId: string; sessionId: string; conceptId: string }
   | { type: 'session_started'; userId: string; sessionId: string }
-  | { type: 'session_ended'; userId: string; sessionId: string };
+  | { type: 'session_ended'; userId: string; sessionId: string }
+  | { type: 'course_requested'; userId: string; courseId: string };
 
 export type JobHandler = (payload: Record<string, unknown>) => Promise<void>;
 
@@ -53,6 +54,8 @@ function route(e: ConductorEvent): Array<{ kind: string; dedupeKey: string | nul
       return [{ kind: 'director_replan', dedupeKey: `director:${e.sessionId}`, payload: e }];
     case 'session_ended':
       return [{ kind: 'coach_reflect', dedupeKey: `coach:${e.sessionId}`, payload: e }];
+    case 'course_requested':
+      return [{ kind: 'build_course', dedupeKey: `course:${e.courseId}`, payload: e }];
   }
 }
 

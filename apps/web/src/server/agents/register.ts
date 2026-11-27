@@ -6,6 +6,7 @@ import { registerJobHandler } from '../conductor';
 import { agentsEnabled, BudgetExceededError } from './runtime';
 import { generateItems } from './items/pipeline';
 import { diagnoseRecurring } from './diagnostician';
+import { buildCourse } from './architect/architect';
 
 let registered = false;
 
@@ -17,7 +18,7 @@ export function registerAgents() {
     try {
       await generateItems({
         conceptId: String(p.conceptId),
-        userId: (p.userId as string) ?? null,
+        userId: (p.userId as string) || null,
         trigger: p.targetMisconceptionId ? 'misconception_repeat' : 'pool_low',
         idealDifficulty: typeof p.idealDifficulty === 'number' ? p.idealDifficulty : undefined,
         targetMisconceptionId: (p.targetMisconceptionId as string) ?? null,
@@ -26,6 +27,11 @@ export function registerAgents() {
       if (e instanceof BudgetExceededError) return; // not a failure: the seed bank covers it
       throw e;
     }
+  });
+
+  // Goal (+ material) → Librarian indexes → Architect designs → course opens.
+  registerJobHandler('build_course', async (p) => {
+    await buildCourse({ courseId: String(p.courseId) });
   });
 
   // Recurring misconception → Diagnostician writes a note into learner memory.

@@ -152,7 +152,8 @@ export async function toolAgent(
   opts: {
     system: string;
     prompt: string;
-    tools: Array<BetaRunnableTool<any>>;
+    /** Runnable tools plus raw server-tool definitions (e.g. web_search). */
+    tools: Array<BetaRunnableTool<any> | Anthropic.Beta.Messages.BetaWebSearchTool20260209>;
     effort: Effort;
     maxIterations: number;
     maxTokens?: number;
