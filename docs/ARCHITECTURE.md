@@ -278,6 +278,7 @@ Mastery shown to the learner = P(known) × current retrievability, so mastery de
 - **Refusal fallback:** server-side `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`), and `stop_reason` is checked before reading content.
 - **Prompt caching:** frozen system prompts and a deterministic tool order give a cacheable prefix. Volatile learner state goes in the last user turn or a mid-conversation system message.
 - **Why not Managed Agents for the hot path:** these agents are short, latency-sensitive and need in-process database tools, with no sandbox. Managed Agents is the planned home for long background jobs, such as building a course from a 300-page PDF or running nightly cohort analytics ([RESEARCH.md §4](RESEARCH.md#4-agent-runtime)).
+- **Layers:** `agents/llm.ts` holds the Claude client and the three call shapes (structured output, tool loop, streaming tool loop) with no database access; `agents/runtime.ts` adds tracing and budgets on top. Agent cores that take plain data (e.g. the Director's `decidePlan` in `director/decide.ts`) can therefore run in the eval harness without Postgres.
 - **Observability:** every run writes an `agent_runs` row: agent, input digest, tool calls, output, tokens, cost, latency, status, and a trace id. A per-learner activity feed shows learners what the agents did for them.
 - **Safety and cost guards:**
   - per-learner daily token budget

@@ -18,7 +18,7 @@ An adaptive learning platform where a **deterministic learner model** tracks wha
 | Learner model | `packages/engine`: graph-aware BKT, Elo/IRT, FSRS-6, affect detection, ZPD control, adaptive UX policy |
 | Agents | Anthropic SDK Tool Runner: Director, Curriculum Architect, Diagnostician, Item Author, Item Verifier, Tutor, Coach, Librarian |
 | Data | PostgreSQL (+ pgvector) via Drizzle |
-| Evals | simulated learners, item/tutor/RAG/director suites |
+| Evals | `evals/`: simulated-learner study, guard goldens, Verifier and Director suites; CI in `.github/workflows` |
 
 ## Run locally
 
@@ -31,7 +31,9 @@ cp .env.example apps/web/.env.local   # then set AUTH_SECRET (and ANTHROPIC_API_
 npm run db:migrate -w @alp/web        # or: npm run db:push
 npm run db:seed
 npm run dev                           # http://localhost:3000
-npm test                              # engine + web tests (incl. simulated-learner study)
+npm test                              # engine + web unit tests
+npm run eval                          # free eval suites: simulated learners + guard goldens (as in CI)
+EVAL_MAX_USD=2 npm run eval:llm       # Verifier + Director evals (calls Claude, capped per suite)
 npm run agents:author -w @alp/web -- two-pointers 2   # run Item Author → Verifier for one concept (uses real tokens)
 ```
 

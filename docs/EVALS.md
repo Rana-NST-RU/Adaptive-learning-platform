@@ -12,6 +12,19 @@ Evals are code. They live in `evals/` and run with `npm run eval:<suite>`. Each 
 | Retrieval | `rag` | embeddings + judge | on PRs touching `server/rag`; nightly |
 | Product | online metrics + A/B | n/a | continuously in production |
 
+### Running the suites
+
+| Command | Suite | Calls Claude | In CI |
+|---|---|---|---|
+| `npm run eval:sim` | Simulated-learner study (§1) | no | every push and PR (`ci.yml`) |
+| `npm run eval:guards` | Golden sets for the deterministic guards: tutor leak guard (§4), Director plan rules (§5), item rules (§2) | no | every push and PR |
+| `npm run eval:verifier` | Item Verifier on known-good and known-bad items (§2) | yes | nightly, on demand, PRs touching agents (`evals-llm.yml`) |
+| `npm run eval:director` | Director decisions on labelled snapshots (§5) | yes | nightly (3 repeats), on demand, PRs touching agents |
+
+`npm run eval` runs the two free suites. Reports land in `evals/reports/<suite>.{json,md}`; the `.md` goes into the CI job summary and can be pasted into a PR. Each metric has a **gate** (a regression floor that fails the run) and, where EVALS sets one, a **target** shown beside it. Targets the engine doesn't meet yet are reported, never silently gated away. LLM suites skip cleanly without `ANTHROPIC_API_KEY` and stop at `EVAL_MAX_USD` per suite (checked between cases).
+
+**Implemented so far:** §1 simulator (without the ASSISTments check), §2 structural rules and Verifier recall/false-reject, §4 leak guard (deterministic part), §5 Director fixtures and consistency. **Not yet:** tutor persona conversations and judges (§4), Coach fact checks (§5), Diagnostician (§3), Curriculum Architect (§6), RAG (§7).
+
 ---
 
 ## 1. Engine (deterministic, every commit)
@@ -36,6 +49,20 @@ Evals are code. They live in `evals/` and run with `npm run eval:<suite>`. Each 
 - FSRS short-term steps flooded sessions with reviews (136/160 actions). Short-term steps are now disabled for concept-level memory.
 
 **Caveat:** over a 160-question horizon, random order caught up, because everything saturates on 4 concepts. The sim learner also learns most at 50% success and has no motivation or dropout model. The full `evals/sim` must add dropout and boredom/frustration traits, larger graphs and forgetting before the ZPD target is tuned from simulation.
+
+**Full study (`evals/src/sim`, Step 11).** 150 simulated learners (novice, intermediate and uneven archetypes) work through the 12-concept seed course over six spaced sessions (days 0, 1, 3, 6, 10, 15; up to 25 questions each), under four policies: the engine, random order, fixed curriculum order, and mastery-threshold without spacing. Learners forget between sessions (spacing raises stability), learn little while prerequisites are weak, quit a session after too many wrong answers in a row (frustration) or too many trivially easy ones (boredom), and drop out after two quits. The item bank is shared across learners, and the engine calibrates item difficulty online, as in production. The CI gates are floors that hold across all three seeds:
+
+| Outcome | Engine vs the best baseline (range over seeds 2026, 7, 99) |
+|---|---|
+| True-skill gain | +0.27 to +0.32 logits |
+| Concepts mastered (ground truth) | 1.6× to 1.9× |
+| Recall 30 days after the last session | +2.1 to +2.9 points |
+| Dropout (vs random order) | **+14 to +29 points worse** |
+
+**What the study found (open issues, tracked by the suite):**
+- **Item calibration drifts under adaptive selection.** Shared item difficulty estimates drift steadily downward as learners pass through (≈ −0.7 → −0.9 logits after 150 learners). Under random selection there is no drift. Every new learner starts at ability 0, and the engine's adaptive choices bias the Elo updates. With it, the engine's predictions run pessimistic (it predicts ≈ 74% success, learners get ≈ 81%), it serves items easier than intended, and boredom quits push dropout up as more learners use the bank. Likely fixes for a future engine step: slow item updates once an item has enough answers, seed a learner's ability on a new concept from their other concepts, and re-run this suite to confirm.
+- **Mastery-estimate AUC (≈ 0.72–0.76) and next-answer AUC (≈ 0.64) are below the targets above.** Next-answer AUC is partly compressed by adaptive selection itself (predictions cluster around the target), so it is gated as a regression floor and tracked against the target.
+- The simulator also exposed a flaw in itself: its first forgetting model let practice push a learner below their prior knowledge. Simulator assumptions need the same scrutiny as the engine.
 
 **Real data check (later):** fit and score the engine on a public tutoring log dataset (e.g. ASSISTments) for next-answer AUC, to keep the simulator honest.
 
