@@ -1,21 +1,25 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { getUser } from '@/server/auth';
 import { db, schema } from '@/server/db';
 import { learnerOverview } from '@/server/learner/service';
 import { KnowledgeMap } from '@/components/KnowledgeMap';
 import { StartSessionButton, SignOutButton } from '@/components/DashboardActions';
 
-export default async function LearnPage() {
+export default async function LearnPage({ searchParams }: { searchParams: Promise<{ course?: string }> }) {
   const user = await getUser();
   if (!user) redirect('/login');
-  const enrolment = await db.query.enrollments.findFirst({
-    where: eq(schema.enrollments.userId, user.id),
-    orderBy: desc(schema.enrollments.createdAt),
-  });
-  if (!enrolment) redirect('/onboarding');
-  const course = (await db.query.courses.findFirst({ where: eq(schema.courses.id, enrolment.courseId) }))!;
+  const enrolled = await db
+    .select({ id: schema.courses.id, title: schema.courses.title })
+    .from(schema.enrollments)
+    .innerJoin(schema.courses, and(eq(schema.courses.id, schema.enrollments.courseId), eq(schema.courses.status, 'ready')))
+    .where(eq(schema.enrollments.userId, user.id))
+    .orderBy(desc(schema.enrollments.createdAt));
+  if (enrolled.length === 0) redirect('/onboarding');
+  const wanted = (await searchParams).course;
+  const courseId = enrolled.find((c) => c.id === wanted)?.id ?? enrolled[0]!.id;
+  const course = (await db.query.courses.findFirst({ where: eq(schema.courses.id, courseId) }))!;
   const o = await learnerOverview(user.id, course.id);
 
   const cal = o.calibration;
@@ -36,10 +40,21 @@ export default async function LearnPage() {
           <h1 className="text-2xl font-bold">Welcome back, {user.name.split(' ')[0]}</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/learn/insights" className="btn btn-ghost">Insights</Link>
+          <Link href="/courses/new" className="btn btn-ghost">+ New course</Link>
+          <Link href={`/learn/insights?course=${course.id}`} className="btn btn-ghost">Insights</Link>
           <SignOutButton />
         </div>
       </header>
+
+      {enrolled.length > 1 && (
+        <nav className="flex flex-wrap gap-2" aria-label="Your courses">
+          {enrolled.map((c) => (
+            <Link key={c.id} href={`/learn?course=${c.id}`} className="chip" data-on={c.id === course.id}>
+              {c.title}
+            </Link>
+          ))}
+        </nav>
+      )}
 
       <section className="card flex flex-wrap items-center justify-between gap-4 p-5">
         <div>

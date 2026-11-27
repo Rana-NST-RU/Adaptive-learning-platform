@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { Inline } from '@/lib/md';
 import { TutorPanel } from './TutorPanel';
 
-type Phase = 'loading' | 'lesson' | 'question' | 'feedback' | 'break' | 'ended' | 'error';
+type Phase = 'loading' | 'lesson' | 'question' | 'feedback' | 'break' | 'ended' | 'error' | 'waiting';
 
 const MODE_LABEL: Record<string, string> = {
   focus: 'Focus',
@@ -53,6 +53,7 @@ export function PracticeSession({ sessionId }: { sessionId: string }) {
         seenLessons.current.add(s.concept.id);
         return setPhase('lesson');
       }
+      if (!s.item) return setPhase('waiting');
       shownAt.current = Date.now();
       setPhase('question');
     } catch (e) {
@@ -64,6 +65,13 @@ export function PracticeSession({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Brand-new agent-built courses: questions are still being written. Retry.
+  useEffect(() => {
+    if (phase !== 'waiting') return;
+    const t = setTimeout(() => void load(), 6000);
+    return () => clearTimeout(t);
+  }, [phase, load]);
 
   // Visible timer only in challenge mode (UxPolicy.showTimer).
   useEffect(() => {
@@ -171,6 +179,14 @@ export function PracticeSession({ sessionId }: { sessionId: string }) {
 
         {phase === 'loading' && <div className="card muted p-8 text-center">Thinking about what’s best for you next…</div>}
 
+        {phase === 'waiting' && (
+          <div className="card space-y-2 p-8 text-center">
+            <p className="text-3xl">✍️</p>
+            <p className="font-semibold">Your questions for {step?.concept?.name ?? 'this concept'} are being written and checked</p>
+            <p className="muted text-sm">The Item Author drafts them and the Verifier solves each one blind before you see it. This usually takes under a minute.</p>
+          </div>
+        )}
+
         {phase === 'error' && (
           <div className="card space-y-3 p-6">
             <p style={{ color: 'var(--bad)' }}>{error}</p>
@@ -183,7 +199,7 @@ export function PracticeSession({ sessionId }: { sessionId: string }) {
             <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>New concept</p>
             <h2 className="text-xl font-bold">{step.concept.name}</h2>
             <p className="leading-relaxed"><Inline text={step.concept.lesson ?? step.concept.summary} /></p>
-            <button className="btn btn-primary" onClick={() => { shownAt.current = Date.now(); setPhase('question'); }}>
+            <button className="btn btn-primary" onClick={() => { shownAt.current = Date.now(); setPhase(step.item ? 'question' : 'waiting'); }}>
               Try a question
             </button>
           </section>

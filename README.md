@@ -36,3 +36,5 @@ npm run agents:author -w @alp/web -- two-pointers 2   # run Item Author → Veri
 ```
 
 Without an Anthropic credential the platform runs on the seeded item bank: the learner model and adaptive UX work fully, and agents switch on once a key is configured.
+
+With agents enabled, learners can also **build a course from any goal** (optionally from their own PDFs, notes or a web page) at `/courses/new`: the Librarian indexes the material, the Curriculum Architect designs the concept graph, and the Item Author/Verifier write the first questions. Set `VOYAGE_API_KEY` to add semantic search to the hybrid retrieval.

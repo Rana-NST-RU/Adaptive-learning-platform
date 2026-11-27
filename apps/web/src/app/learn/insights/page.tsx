@@ -7,7 +7,7 @@ import { learnerOverview } from '@/server/learner/service';
 
 const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`);
 
-export default async function InsightsPage() {
+export default async function InsightsPage({ searchParams }: { searchParams: Promise<{ course?: string }> }) {
   const user = await getUser();
   if (!user) redirect('/login');
   const enrolment = await db.query.enrollments.findFirst({
@@ -15,7 +15,11 @@ export default async function InsightsPage() {
     orderBy: desc(schema.enrollments.createdAt),
   });
   if (!enrolment) redirect('/onboarding');
-  const o = await learnerOverview(user.id, enrolment.courseId);
+  const wanted = (await searchParams).course;
+  const ok = wanted
+    ? await db.query.enrollments.findFirst({ where: (e, { and, eq }) => and(eq(e.userId, user.id), eq(e.courseId, wanted)) })
+    : null;
+  const o = await learnerOverview(user.id, ok ? wanted! : enrolment.courseId);
 
   return (
     <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">

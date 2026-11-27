@@ -2,10 +2,20 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { CourseBuilder } from './CourseBuilder';
 
 const LEVELS = ['Brand new', 'Seen it before', 'Comfortable', 'Strong', 'Expert'];
 
-export function Onboarding({ name, courses }: { name: string; courses: Array<{ id: string; title: string; description: string }> }) {
+export function Onboarding({
+  name,
+  courses,
+  canBuild,
+}: {
+  name: string;
+  courses: Array<{ id: string; title: string; description: string }>;
+  canBuild: boolean;
+}) {
+  const [mode, setMode] = useState<'pick' | 'build'>('pick');
   const router = useRouter();
   const [goal, setGoal] = useState('');
   const [interests, setInterests] = useState('');
@@ -14,6 +24,19 @@ export function Onboarding({ name, courses }: { name: string; courses: Array<{ i
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function saveProfile() {
+    await api(
+      '/api/profile',
+      {
+        goal: goal || undefined,
+        interests: interests.split(',').map((s) => s.trim()).filter(Boolean),
+        selfRatedLevel: level,
+        dailyGoalMinutes: minutes,
+      },
+      'PUT',
+    );
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -80,7 +103,16 @@ export function Onboarding({ name, courses }: { name: string; courses: Array<{ i
         </section>
 
         <section className="space-y-2">
-          <h2 className="font-semibold">Pick a course</h2>
+          <h2 className="font-semibold">Choose what to learn</h2>
+          {canBuild && (
+            <div className="flex gap-2">
+              <button type="button" className="chip" data-on={mode === 'pick'} onClick={() => setMode('pick')}>Ready-made course</button>
+              <button type="button" className="chip" data-on={mode === 'build'} onClick={() => setMode('build')}>✨ Build one for my goal</button>
+            </div>
+          )}
+          {mode === 'build' ? (
+            <CourseBuilder onBeforeSubmit={saveProfile} />
+          ) : (
           <div className="space-y-2">
             {courses.map((c) => (
               <label key={c.id} className="card flex cursor-pointer gap-3 p-4" style={courseId === c.id ? { borderColor: 'var(--accent)' } : undefined}>
@@ -91,12 +123,14 @@ export function Onboarding({ name, courses }: { name: string; courses: Array<{ i
                 </span>
               </label>
             ))}
-            <p className="muted text-sm">Soon: describe any goal and the Curriculum Architect agent will build a course for you.</p>
           </div>
+          )}
         </section>
 
         {error && <p style={{ color: 'var(--bad)' }}>{error}</p>}
-        <button className="btn btn-primary" disabled={busy || !courseId}>{busy ? 'Setting up…' : 'Start learning'}</button>
+        {mode === 'pick' && (
+          <button className="btn btn-primary" disabled={busy || !courseId}>{busy ? 'Setting up…' : 'Start learning'}</button>
+        )}
       </form>
     </main>
   );
