@@ -3,9 +3,10 @@ import { redirect } from 'next/navigation';
 import { and, desc, eq } from 'drizzle-orm';
 import { getUser } from '@/server/auth';
 import { db, schema } from '@/server/db';
-import { learnerOverview } from '@/server/learner/service';
+import { latestReflection, learnerOverview } from '@/server/learner/service';
 import { KnowledgeMap } from '@/components/KnowledgeMap';
 import { StartSessionButton, SignOutButton } from '@/components/DashboardActions';
+import { ReflectionCard } from '@/components/ReflectionCard';
 
 export default async function LearnPage({ searchParams }: { searchParams: Promise<{ course?: string }> }) {
   const user = await getUser();
@@ -20,7 +21,7 @@ export default async function LearnPage({ searchParams }: { searchParams: Promis
   const wanted = (await searchParams).course;
   const courseId = enrolled.find((c) => c.id === wanted)?.id ?? enrolled[0]!.id;
   const course = (await db.query.courses.findFirst({ where: eq(schema.courses.id, courseId) }))!;
-  const o = await learnerOverview(user.id, course.id);
+  const [o, reflection] = await Promise.all([learnerOverview(user.id, course.id), latestReflection(user.id, course.id)]);
 
   const cal = o.calibration;
   const calText =
@@ -65,6 +66,13 @@ export default async function LearnPage({ searchParams }: { searchParams: Promis
         </div>
         <StartSessionButton courseId={course.id} />
       </section>
+
+      {reflection && (
+        <section className="card p-5">
+          <h2 className="mb-2 font-semibold">From your coach, after your last session</h2>
+          <ReflectionCard r={reflection} />
+        </section>
+      )}
 
       <section className="grid gap-4 sm:grid-cols-3">
         <Stat label="Mastered" value={`${o.totals.mastered}/${o.totals.concepts}`} />

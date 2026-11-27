@@ -38,8 +38,10 @@ export function targetSuccess(
     t += (t - rate) * 0.5;
   }
 
-  // Bounded override from the Learning Director agent (±0.1 max).
-  t += Math.max(-0.1, Math.min(0.1, override));
+  // Bounded override from the Learning Director agent (±0.1 max). A plan made
+  // earlier never makes things harder for a learner who is struggling now.
+  const struggling = affect === 'frustrated' || affect === 'disengaged';
+  t += Math.max(struggling ? 0 : -0.1, Math.min(0.1, override));
 
   return Math.min(MAX_TARGET, Math.max(MIN_TARGET, t));
 }

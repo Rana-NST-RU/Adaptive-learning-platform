@@ -27,6 +27,7 @@ import { HttpError } from '../auth';
 import { emit, type ConductorEvent } from '../conductor';
 import { agentsEnabled } from '../agents/runtime';
 import { gradeOpenResponse, gradeToCorrect } from '../agents/diagnostician';
+import { MIN_ANSWERS_FOR_REFLECTION } from '../agents/coach';
 import {
   EXPECTED_LATENCY_MS,
   loadGraph,
@@ -454,4 +455,35 @@ export async function learnerOverview(userId: string, courseId: string) {
     calibration: calibration(signals),
     activity,
   };
+}
+
+// ── Coach reflection ───────────────────────────────────────────────────────
+
+/**
+ * The Coach writes asynchronously after a session ends. `pending` while its
+ * job is queued or running, `none` when no reflection will come (agents off,
+ * too short, budget reached or failed).
+ */
+export async function sessionReflection(userId: string, sessionId: string) {
+  const s = await getSession(userId, sessionId);
+  const reflection = s.summary?.reflection ?? null;
+  if (reflection) return { status: 'ready' as const, reflection };
+  if (!s.endedAt || !agentsEnabled() || (s.summary?.answered ?? 0) < MIN_ANSWERS_FOR_REFLECTION) return { status: 'none' as const, reflection: null };
+  const job = await db.query.jobs.findFirst({
+    where: eq(schema.jobs.dedupeKey, `coach:${sessionId}`),
+    orderBy: desc(schema.jobs.createdAt),
+  });
+  const pending = !job || job.status === 'queued' || job.status === 'running';
+  return { status: pending ? ('pending' as const) : ('none' as const), reflection: null };
+}
+
+/** Latest Coach reflection for this learner on a course (dashboard card). */
+export async function latestReflection(userId: string, courseId: string) {
+  const [row] = await db
+    .select({ summary: schema.sessions.summary, endedAt: schema.sessions.endedAt })
+    .from(schema.sessions)
+    .where(and(eq(schema.sessions.userId, userId), eq(schema.sessions.courseId, courseId), sql`${schema.sessions.summary} ? 'reflection'`))
+    .orderBy(desc(schema.sessions.endedAt))
+    .limit(1);
+  return row?.summary?.reflection ?? null;
 }

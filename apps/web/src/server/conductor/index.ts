@@ -51,7 +51,9 @@ function route(e: ConductorEvent): Array<{ kind: string; dedupeKey: string | nul
     case 'affect_changed':
     case 'mastered':
     case 'session_started':
-      return [{ kind: 'director_replan', dedupeKey: `director:${e.sessionId}`, payload: e }];
+      // Keyed per trigger type: an opening plan must not suppress a
+      // struggling re-plan a minute later (the cooldown is per key).
+      return [{ kind: 'director_replan', dedupeKey: `director:${e.sessionId}:${e.type}`, payload: e }];
     case 'session_ended':
       return [{ kind: 'coach_reflect', dedupeKey: `coach:${e.sessionId}`, payload: e }];
     case 'course_requested':

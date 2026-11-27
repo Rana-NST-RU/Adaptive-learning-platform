@@ -7,6 +7,18 @@ import { agentsEnabled, BudgetExceededError } from './runtime';
 import { generateItems } from './items/pipeline';
 import { diagnoseRecurring } from './diagnostician';
 import { buildCourse } from './architect/architect';
+import { replanSession } from './director/director';
+import { reflectOnSession } from './coach';
+
+/** Budget exhaustion is not a failure: the engine and seed bank carry on. */
+async function softBudget(fn: () => Promise<unknown>) {
+  try {
+    await fn();
+  } catch (e) {
+    if (e instanceof BudgetExceededError) return;
+    throw e;
+  }
+}
 
 let registered = false;
 
@@ -47,4 +59,13 @@ export function registerAgents() {
       throw e;
     }
   });
+
+  // Session events → Learning Director decides whether to re-plan.
+  registerJobHandler('director_replan', (p) => {
+    const { type, userId, sessionId, ...detail } = p as { type: string; userId: string; sessionId: string } & Record<string, unknown>;
+    return softBudget(() => replanSession({ userId, sessionId, trigger: type, detail }));
+  });
+
+  // Session end → Coach writes the reflection card (+ a memory note if warranted).
+  registerJobHandler('coach_reflect', (p) => softBudget(() => reflectOnSession({ sessionId: String(p.sessionId) })));
 }

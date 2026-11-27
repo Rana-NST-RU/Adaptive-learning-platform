@@ -167,6 +167,63 @@ The engine emits a `UxPolicy` with every response, and the UI is a pure function
 
 The Director may override the mode (bounded and time-limited) and must record a reason, which the UI shows.
 
+### 4.5 The agentic loop: events, re-planning and reflection
+
+Every agent is woken by an event; none runs on a timer or on the learner's critical path. This table is the complete routing in `server/conductor/index.ts`:
+
+| Event (emitted by) | Job → agent | Dedupe slot · cooldown | What changes for the learner |
+|---|---|---|---|
+| `course_requested` (course builder) | `build_course` → Librarian → Curriculum Architect → Item Author/Verifier | per course | A new course opens with lessons and first questions |
+| `pool_low` (item selection) | `author_items` → Item Author → Item Verifier | per concept · 15 min | Fresh verified questions near the learner's level |
+| `misconception_repeat` (engine) | `author_items` (targeted) + `remember` → Diagnostician | per concept+misconception · 15/60 min | Questions aimed at the mix-up; a diagnosis in learner memory |
+| `session_started` (start session) | `director_replan` → Learning Director | per session+trigger · 2 min | An opening plan, if one helps |
+| `struggling` (engine: error streak, lapse) | `director_replan` → Learning Director | per session+trigger · 2 min | An easier, re-focused plan |
+| `affect_changed` (UX mode shift) | `director_replan` → Learning Director | per session+trigger · 2 min | Plan adjusted to the new state |
+| `mastered` (engine) | `director_replan` → Learning Director | per session+trigger · 2 min | Brief celebration and what it unlocks |
+| `session_ended` (end session) | `coach_reflect` → Coach | per session | Reflection card; a memory note for other agents |
+| learner opens the tutor | Tutor (streamed, synchronous) | n/a | Socratic help on the current item |
+| short-answer submitted | Diagnostician grading (synchronous, low effort) | n/a | Free-text answer graded |
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor L as Learner
+  participant API
+  participant E as Engine
+  participant C as Conductor
+  participant D as Learning Director
+  participant V as Plan rules
+  participant Co as Coach
+  participant M as Learner memory
+
+  L->>API: answer (3rd wrong in a row)
+  API->>E: applyAttempt → event "struggling"
+  E-->>L: feedback + next item (no waiting on agents)
+  API-)C: emit(struggling)
+  C->>D: director_replan (snapshot: concepts, affect, engine's own pick, memory)
+  D->>V: set_session_plan(draft)
+  V-->>D: "Not accepted: learner is frustrated; no harder questions"
+  D->>V: set_session_plan(fixed draft)
+  V-->>D: accepted → sessions.plan (focus · ±0.1 target · mode · expiry)
+  L->>API: next
+  API->>E: chooseNextAction + deriveUxPolicy with the plan as a bounded override
+  E-->>L: item + UxPolicy + plan headline and reason
+  L->>API: end session
+  API-)C: emit(session_ended)
+  C->>Co: coach_reflect (per-concept change, mistakes, hints, calibration)
+  Co->>M: memory note (only for durable patterns)
+  Co-->>L: reflection card (session end screen + dashboard)
+  M--)D: read at the next re-plan (and by Tutor, Author)
+```
+
+**Three layers of guardrails on the Director.** A Director plan is advice. It is checked three times before it reaches the learner:
+
+1. **Plan rules** (`agents/director/rules.ts`, unit-tested) reject a draft that is out of bounds: a target shift beyond ±0.1, a duration outside 3–20 minutes, an unknown or locked focus concept, ids in learner-facing text, or harder work (negative shift, `challenge`) for a frustrated or disengaged learner. Errors go back to the agent to fix.
+2. **The engine re-clamps on every step**, so a plan that was safe when written can't hurt the learner later. `targetSuccess` clamps the override and ignores a negative shift while the learner is struggling; `deriveUxPolicy` ignores a `challenge` override in the same state; `chooseNextAction` only boosts a focus concept that is already a valid candidate; and every plan expires.
+3. **The Conductor keys cooldowns per session and trigger.** An opening plan can't suppress a later `struggling` re-plan. This was found in an end-to-end run where a stale "challenge" plan outlived a run of 8 wrong answers.
+
+The Director can also call `keep_current_plan` (no churn when the engine is already right) and `request_items` (at most 2 per run; routed back through the Conductor to the Author).
+
 ## 5. RAG design
 
 ### 5.1 Sources
@@ -265,5 +322,5 @@ docs/                     this file, EVALS.md, RESEARCH.md
 4. Agent runtime (runner, tracing, budgets) + Item Author/Verifier
 5. Tutor (streaming) + Diagnostician
 6. Curriculum Architect + Librarian (RAG)
-7. Director + Coach + adaptive UX polish + open learner model
+7. Director + Coach (§4.5) + adaptive UX polish + open learner model
 8. Eval harness (simulated learners, item-quality, tutor judges) + CI

@@ -4,9 +4,11 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeedbackView, StepView } from '@/server/learner/service';
+import type { SessionReflection } from '@/server/db/schema';
 import { api } from '@/lib/api';
 import { Inline } from '@/lib/md';
 import { TutorPanel } from './TutorPanel';
+import { ReflectionCard } from './ReflectionCard';
 
 type Phase = 'loading' | 'lesson' | 'question' | 'feedback' | 'break' | 'ended' | 'error' | 'waiting';
 
@@ -30,6 +32,7 @@ export function PracticeSession({ sessionId }: { sessionId: string }) {
   const [showExplanation, setShowExplanation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<{ answered: number; correct: number; minutes: number } | null>(null);
+  const [reflection, setReflection] = useState<{ status: 'pending' | 'ready' | 'none'; reflection: SessionReflection | null } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [tutorOpen, setTutorOpen] = useState(false);
   const [tutorHelp, setTutorHelp] = useState(0);
@@ -123,6 +126,27 @@ export function PracticeSession({ sessionId }: { sessionId: string }) {
     setPhase('ended');
   }
 
+  // After the session ends, the Coach writes a reflection in the background.
+  useEffect(() => {
+    if (phase !== 'ended') return;
+    let stop = false;
+    let tries = 0;
+    const poll = async () => {
+      try {
+        const r = await api<{ status: 'pending' | 'ready' | 'none'; reflection: SessionReflection | null }>(`/api/sessions/${sessionId}/reflection`);
+        if (stop) return;
+        setReflection(r);
+        if (r.status === 'pending' && ++tries < 30) setTimeout(poll, 2_000);
+      } catch {
+        if (!stop) setReflection({ status: 'none', reflection: null });
+      }
+    };
+    void poll();
+    return () => {
+      stop = true;
+    };
+  }, [phase, sessionId]);
+
   const ux = step?.ux;
   const minimal = ux?.density === 'minimal';
 
@@ -155,9 +179,19 @@ export function PracticeSession({ sessionId }: { sessionId: string }) {
           </div>
         </header>
 
-        {step?.plan && !minimal && (
-          <div className="card p-3 text-sm" style={{ borderColor: 'var(--accent)' }}>
-            <span className="font-semibold">Plan:</span> {step.plan.headline}
+        {step?.plan && (step.plan.by === 'director' || !minimal) && phase !== 'ended' && (
+          <div className="card space-y-1 p-3 text-sm" style={{ borderColor: 'var(--accent)' }}>
+            <p>
+              <span className="font-semibold">{step.plan.by === 'director' ? '🧭 Your plan:' : 'Plan:'}</span> {step.plan.headline}
+            </p>
+            {!minimal && step.plan.reasons?.length ? <p className="muted text-xs">{step.plan.reasons.join(' ')}</p> : null}
+            {!minimal && step.plan.steps.length > 1 && (
+              <ol className="muted list-decimal pl-5 text-xs">
+                {step.plan.steps.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+            )}
           </div>
         )}
 
@@ -353,7 +387,13 @@ export function PracticeSession({ sessionId }: { sessionId: string }) {
             <p className="muted">
               {summary.answered} questions · {summary.correct} correct · {summary.minutes} min
             </p>
-            <p className="text-sm">Your coach will leave a reflection on the dashboard when agents are enabled.</p>
+            {reflection?.status === 'ready' && reflection.reflection ? (
+              <ReflectionCard r={reflection.reflection} />
+            ) : reflection?.status === 'pending' || !reflection ? (
+              <p className="muted text-sm">Your coach is reflecting on this session…</p>
+            ) : (
+              <p className="muted text-sm">Nice work. Keep sessions going to build up your knowledge map.</p>
+            )}
             <Link className="btn btn-primary inline-block" href="/learn">Back to dashboard</Link>
           </section>
         )}

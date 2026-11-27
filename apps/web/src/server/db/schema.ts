@@ -196,11 +196,33 @@ export const items = pgTable(
 export interface SessionPlan {
   headline: string;
   steps: string[];
+  /** Learner-facing reasons for the plan (open learner model). */
+  reasons?: string[];
   focusConceptId?: string | null;
   targetDelta?: number;
   modeOverride?: UxPolicy['mode'] | null;
   expiresAt?: string;
+  /** Event that caused the re-plan (session_started, struggling, …). */
+  trigger?: string;
   by: 'engine' | 'director';
+}
+
+/** Coach's end-of-session reflection, stored in sessions.summary.reflection. */
+export interface SessionReflection {
+  headline: string;
+  wentWell: string;
+  toWorkOn: string;
+  calibrationNote: string | null;
+  nextStep: string;
+  at: string;
+}
+
+export interface SessionSummary {
+  answered: number;
+  correct: number;
+  minutes: number;
+  calibration?: unknown;
+  reflection?: SessionReflection;
 }
 
 export const sessions = pgTable(
@@ -213,7 +235,7 @@ export const sessions = pgTable(
     endedAt: timestamp('ended_at', { withTimezone: true }),
     plan: jsonb('plan').$type<SessionPlan | null>(),
     lastUx: jsonb('last_ux').$type<UxPolicy | null>(),
-    summary: jsonb('summary').$type<Record<string, unknown> | null>(),
+    summary: jsonb('summary').$type<SessionSummary | null>(),
     /** Item currently shown to the learner (prevents answering stale items). */
     currentItemId: uuid('current_item_id'),
     currentWhy: jsonb('current_why').$type<string[]>(),

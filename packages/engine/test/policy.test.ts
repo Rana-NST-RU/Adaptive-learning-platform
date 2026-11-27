@@ -92,6 +92,17 @@ describe('adaptive UX policy', () => {
     expect(ux.hintPolicy).toBe('proactive');
     expect(ux.tutorNudge).not.toBeNull();
   });
+
+  it('ignores a stale challenge override from the Director while the learner is struggling', () => {
+    const recent: AttemptSignal[] = [true, false, false, false].map((c) => ({
+      conceptId: 'arrays', correct: c, confidence: 2, latencyMs: 25_000, hintsUsed: 1, at: '',
+    }));
+    const affect = detectAffect(recent);
+    const action = chooseNextAction({ nodes, states: fresh(), recent, affect: affect.state });
+    const base = { affect, action, calibration: calibration(recent), sessionMinutes: 5, questionsThisSession: 4, dailyGoalMinutes: 20 };
+    expect(deriveUxPolicy({ ...base, modeOverride: 'challenge' }).mode).toBe('recovery');
+    expect(deriveUxPolicy({ ...base, modeOverride: 'review' }).mode).toBe('review');
+  });
 });
 
 // ─── Simulated learner study (see docs/EVALS.md §1) ─────────────────────────

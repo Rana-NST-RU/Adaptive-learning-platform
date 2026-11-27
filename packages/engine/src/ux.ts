@@ -30,7 +30,12 @@ export function deriveUxPolicy(input: UxInput): UxPolicy {
   else if (action.kind === 'learn_new') mode = 'explore';
   else mode = 'focus';
 
-  if (input.modeOverride) {
+  // Guardrail: a Director override that asks for challenge is ignored while
+  // the learner is struggling (the plan may predate the struggle).
+  const struggling = affect.state === 'frustrated' || affect.state === 'disengaged';
+  if (input.modeOverride === 'challenge' && struggling) {
+    reasons.push('Your plan asked for a challenge, but these have been tough, so we are easing off for now.', ...affect.evidence.slice(0, 1));
+  } else if (input.modeOverride) {
     mode = input.modeOverride;
     reasons.push('Mode set by your learning plan.');
   } else {

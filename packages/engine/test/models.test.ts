@@ -141,6 +141,12 @@ describe('ZPD controller', () => {
   it('clamps director overrides to ±0.1', () => {
     expect(targetSuccess('flow', [], 'practice', 5) - targetSuccess('flow', [], 'practice', 0)).toBeCloseTo(0.1);
   });
+
+  it('never applies a "harder" override to a struggling learner', () => {
+    expect(targetSuccess('frustrated', [], 'practice', -0.1)).toBeCloseTo(targetSuccess('frustrated', [], 'practice', 0));
+    expect(targetSuccess('disengaged', [], 'practice', 0.05)).toBeGreaterThan(targetSuccess('disengaged', [], 'practice', 0));
+    expect(targetSuccess('flow', [], 'practice', -0.1)).toBeLessThan(targetSuccess('flow', [], 'practice', 0));
+  });
 });
 
 describe('calibration', () => {
