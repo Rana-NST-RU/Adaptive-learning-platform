@@ -5,6 +5,7 @@ import {
   guessFor,
   eloPredict,
   eloUpdate,
+  ELO_TUNING,
   difficultyForTarget,
   authoredDifficultyToLogit,
   gradeFor,
@@ -79,6 +80,57 @@ describe('Elo / IRT', () => {
     const b = difficultyForTarget(0.4, 0.72, 0.2);
     expect(eloPredict(0.4, b, 0.2)).toBeCloseTo(0.72, 5);
     expect(authoredDifficultyToLogit(1)).toBeLessThan(authoredDifficultyToLogit(5));
+  });
+
+  it('leaves the item alone while the learner estimate is visibly behind', () => {
+    const settled = eloUpdate(0, 0, true, 10, 0, 0.25, { trend: 0 });
+    const half = eloUpdate(0, 0, true, 10, 0, 0.25, { trend: ELO_TUNING.itemGate / 2 });
+    const behind = eloUpdate(0, 0, true, 10, 0, 0.25, { trend: ELO_TUNING.itemGate });
+    expect(settled.difficulty).toBeLessThan(half.difficulty);
+    expect(half.difficulty).toBeLessThan(0);
+    expect(behind.difficulty).toBe(0);
+    // The learner side still moves.
+    expect(behind.ability).toBeGreaterThan(0);
+  });
+
+  it('builds learning velocity from a run of beaten predictions, within its cap', () => {
+    let v = { trend: 0, velocity: 0 };
+    const seen: number[] = [];
+    for (let i = 0; i < 200; i++) {
+      const r = eloUpdate(0, 0.5, true, 20, 50, 0.25, v);
+      v = { trend: r.trend, velocity: r.velocity };
+      seen.push(r.velocity);
+    }
+    expect(seen[5]!).toBeGreaterThan(seen[0]!);
+    expect(Math.max(...seen)).toBeLessThanOrEqual(ELO_TUNING.velocityMax);
+    expect(v.trend).toBeGreaterThan(0.2);
+  });
+
+  it('does not book learning as item easiness under adaptive selection', () => {
+    // Learners improve 0.15 logits per answer and are always given the item
+    // nearest a 72% target. Plain Elo drifted such a bank well below its true
+    // difficulties; the learning-aware update must keep the mean bias small.
+    let seed = 7;
+    const rand = () => ((seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648) / 2_147_483_648);
+    const items = Array.from({ length: 16 }, (_, i) => ({ trueB: -2 + (4 * i) / 15, b: -2 + (4 * i) / 15, n: 0 }));
+    for (let learner = 0; learner < 120; learner++) {
+      let skill = -1.5 + rand();
+      let s = newConceptState('c');
+      for (let q = 0; q < 25; q++) {
+        const item = items.reduce((best, it) =>
+          Math.abs(eloPredict(s.ability, it.b, 0.25) - 0.72) < Math.abs(eloPredict(s.ability, best.b, 0.25) - 0.72) ? it : best,
+        );
+        const correct = rand() < eloPredict(skill, item.trueB, 0.25);
+        const r = eloUpdate(s.ability, item.b, correct, s.attempts, item.n, 0.25, s);
+        s = { ...s, ability: r.ability, attempts: s.attempts + 1, trend: r.trend, velocity: r.velocity };
+        item.b = r.difficulty;
+        item.n++;
+        skill += 0.15;
+      }
+    }
+    const served = items.filter((it) => it.n > 0);
+    const bias = served.reduce((a, it) => a + (it.b - it.trueB) * it.n, 0) / served.reduce((a, it) => a + it.n, 0);
+    expect(bias).toBeGreaterThan(-0.5);
   });
 });
 

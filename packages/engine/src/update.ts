@@ -48,6 +48,8 @@ export function newConceptState(conceptId: string, prior = DEFAULT_BKT_PRIOR): C
     memory: null,
     misconceptions: {},
     lastSeenAt: null,
+    trend: 0,
+    velocity: 0,
   };
 }
 
@@ -65,7 +67,10 @@ export function applyAttempt(
   const guess = guessFor(item.optionCount);
 
   const pKnown = bktUpdate(state.pKnown, attempt.correct, { ...DEFAULT_BKT, guess }, attempt.hintsUsed);
-  const elo = eloUpdate(state.ability, item.difficulty, attempt.correct, state.attempts, item.timesServed, guess);
+  const elo = eloUpdate(state.ability, item.difficulty, attempt.correct, state.attempts, item.timesServed, guess, {
+    trend: state.trend,
+    velocity: state.velocity,
+  });
 
   const fast = attempt.latencyMs < (attempt.expectedLatencyMs ?? 30_000) * 0.5;
   const memory = reviewMemory(state.memory, gradeFor(attempt.correct, attempt.confidence, attempt.hintsUsed, fast), now);
@@ -90,6 +95,8 @@ export function applyAttempt(
     ...state,
     pKnown,
     ability: elo.ability,
+    trend: elo.trend,
+    velocity: elo.velocity,
     attempts: state.attempts + 1,
     correct: state.correct + (attempt.correct ? 1 : 0),
     streak,

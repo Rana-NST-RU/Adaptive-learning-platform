@@ -38,6 +38,10 @@ export interface ConceptState {
   /** Count of observed misconceptions, keyed by misconception id. */
   misconceptions: Record<string, number>;
   lastSeenAt: string | null;
+  /** Running mean of answer residuals (outcome − predicted); gates item calibration. Absent = 0. */
+  trend?: number;
+  /** Estimated learning velocity, logits per answer. Absent = 0. */
+  velocity?: number;
 }
 
 export interface ConceptNode {
