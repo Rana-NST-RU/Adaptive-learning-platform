@@ -1,0 +1,27 @@
+{
+  "name": "@alp/engine",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Deterministic learner model: graph-aware BKT, Elo/IRT calibration, FSRS memory, affect detection, ZPD control, next-best-action and adaptive UX policy.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ts-fsrs": "^6.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.0"
+  }
+}
