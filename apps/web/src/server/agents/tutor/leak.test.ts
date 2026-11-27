@@ -35,4 +35,24 @@ describe('tutor leak guard', () => {
     expect(d('Is it O(n) or O(n log n)? Count the loop iterations.')).toBeNull();
     expect(d('The answer is (a).')).not.toBeNull();
   });
+
+  it('catches colon and bare-letter forms (found by the guards eval)', () => {
+    expect(detect('Answer: b')).not.toBeNull();
+    expect(detect("I'd pick b here.")).not.toBeNull();
+    expect(detect('Select option b.')).not.toBeNull();
+    expect(detect('Pick the option where the sum grows.')).toBeNull();
+  });
+
+  it('does not read the article "a" as an option letter', () => {
+    const d = makeLeakDetector({ answerId: 'a', answerText: 'True', optionTexts: ['True', 'False'] });
+    expect(d("I'd pick a smaller example first.")).toBeNull();
+    expect(d('Pick (a).')).not.toBeNull();
+  });
+
+  it('catches a stated true/false verdict', () => {
+    const d = makeLeakDetector({ answerId: 'a', answerText: 'True', optionTexts: ['True', 'False'] });
+    expect(d('The answer is true.')).not.toBeNull();
+    expect(d("It's true, so pick that one.")).not.toBeNull();
+    expect(d('What would make the statement false?')).toBeNull();
+  });
 });
