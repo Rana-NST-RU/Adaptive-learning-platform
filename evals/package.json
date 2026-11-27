@@ -1,0 +1,24 @@
+{
+  "name": "@alp/evals",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Eval harness: simulated learners, golden datasets for deterministic guards, and budget-capped LLM agent suites. See docs/EVALS.md.",
+  "type": "module",
+  "scripts": {
+    "sim": "tsx src/sim/run.ts",
+    "guards": "tsx --conditions=react-server src/guards/run.ts",
+    "verifier": "tsx --conditions=react-server src/llm/verifier.ts",
+    "director": "tsx --conditions=react-server src/llm/director.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@alp/engine": "*",
+    "@anthropic-ai/sdk": "^1.14.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.0"
+  }
+}

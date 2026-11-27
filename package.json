@@ -5,15 +5,22 @@
   "description": "Agentic adaptive learning platform: a deterministic learner model steered by a team of Claude agents.",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "evals"
   ],
   "scripts": {
     "dev": "npm run dev -w @alp/web",
     "build": "npm run build -w @alp/engine && npm run build -w @alp/web",
     "test": "npm run test -w @alp/engine && npm run test -w @alp/web",
-    "typecheck": "npm run typecheck -w @alp/engine && npm run typecheck -w @alp/web",
+    "typecheck": "npm run typecheck -w @alp/engine && npm run typecheck -w @alp/web && npm run typecheck -w @alp/evals",
     "db:push": "npm run db:push -w @alp/web",
-    "db:seed": "npm run db:seed -w @alp/web"
+    "db:seed": "npm run db:seed -w @alp/web",
+    "eval": "npm run eval:sim && npm run eval:guards",
+    "eval:sim": "npm run sim -w @alp/evals",
+    "eval:guards": "npm run guards -w @alp/evals",
+    "eval:verifier": "npm run verifier -w @alp/evals",
+    "eval:director": "npm run director -w @alp/evals",
+    "eval:llm": "npm run eval:verifier && npm run eval:director"
   },
   "engines": {
     "node": ">=20.9.0"
